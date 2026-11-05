@@ -1,0 +1,1 @@
+const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('tele',{call:(cmd,args)=>ipcRenderer.invoke('command',cmd,args),onNavigate:fn=>ipcRenderer.on('navigate',(_,page)=>fn(page)),onChange:fn=>ipcRenderer.on('changed',()=>fn())});

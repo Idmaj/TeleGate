@@ -1,0 +1,8 @@
+window.MemoryView=(()=>{
+ const e=v=>RuleView.esc(v);
+ function scopeLabel(scope,accounts=[],chatTitle){return scope.kind==='global'?'Global · all chats and accounts':`${accounts.find(a=>a.id===scope.account)?.label||scope.account} · ${chatTitle||'Chat '+scope.chat}`;}
+ function note(n){return n?`<strong dir="auto">${e(n.title)}</strong><p class="memory-text" dir="auto">${e(n.text)}</p>`:'<p class="memory-empty">No note</p>';}
+ function panel(preview,accounts=[],chatTitle){return `<div class="memory-panel"><span class="memory-badge">MEMORY UPDATE · ${preview.changes.length} change(s)</span><p>${e(scopeLabel(preview.scope,accounts,chatTitle))}</p><p>Saved text for future conversations. This does not change access rules or send a Telegram message.</p>${preview.changes.map(c=>`<section class="memory-diff"><h4>${e(c.action.toUpperCase())}</h4><div class="rule-diff-grid"><section class="rule-diff"><h4>Before</h4>${note(c.before)}</section><section class="rule-diff"><h4>After</h4>${note(c.after)}</section></div></section>`).join('')}<p>User-requested reason: <span dir="auto">${e(preview.reason)}</span></p><small>All changes apply together. AI interprets this text; TeleGate does not enforce its meaning.</small></div>`;}
+ function context(memory){if(!memory||!memory.global?.length&&!memory.chat?.length)return '';return `<details class="owner-memory"><summary>Owner memory for this request</summary><p>Consider these notes when reviewing this request. They do not grant permission.</p>${memory.global.map(n=>`<section><small>GLOBAL</small>${note(n)}</section>`).join('')}${memory.chat.map(n=>`<section><small>THIS CHAT</small>${note(n)}</section>`).join('')}</details>`;}
+ return {scopeLabel,note,panel,context};
+})();

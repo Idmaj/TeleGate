@@ -1,0 +1,59 @@
+{
+  "name": "telegate",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Permission-controlled Telegram workspace for MCP-compatible AI assistants",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "dist": "electron-builder --win nsis portable",
+    "dist:portable": "electron-builder --win portable",
+    "test:approvals": "electron . --approval-smoke"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^5.1.0",
+    "telegram": "^2.26.22",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "ir.telegate.desktop",
+    "productName": "TeleGate",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signExecutable": false,
+      "icon": "src/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "npmRebuild": false,
+    "portable": {
+      "artifactName": "${productName} Portable ${version}.${ext}"
+    }
+  },
+  "author": "TeleGate",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "keywords": [
+    "telegram",
+    "mcp",
+    "electron",
+    "desktop",
+    "automation"
+  ]
+}

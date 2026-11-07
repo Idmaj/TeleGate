@@ -33,6 +33,8 @@ The response includes chat identity, folders, allowed operations, and pagination
 
 `dialogs`, `search_all`, and `search_start` default to `scope: "permitted"`. This mode does not request additional access. `scope: "all"` explicitly expands discovery and applies the normal directory and per-chat approval flow.
 
+If permitted discovery is insufficient for the requested task, assistants must continue with `dialogs` using `scope: "all"` and relevant filters, unless the user explicitly restricted the task to permitted chats. TeleGate obtains any required approval. After discovery, assistants should invoke the appropriate tool for the original task and continue after approval. An empty permitted result is not evidence that a chat is absent or denied. Explicit rejection and deny rules must be respected.
+
 A broad public-channel rule covers resolvable channels available to the account; it does not enumerate every public channel on Telegram. Folder permissions follow current membership, including subsequent additions, subject to exceptions and other rules.
 
 ## Search and continuation

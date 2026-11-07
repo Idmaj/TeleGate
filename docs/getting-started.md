@@ -59,6 +59,10 @@ Use **Preview what AI can already read** to inspect the permitted workspace. Ass
 
 Each write is reviewed separately. Notifications show the operation and destination, with a formatted preview when relevant. Dismissing a notification or enabling do-not-disturb does not approve the request.
 
+## Connect another computer
+
+Use **Device sync** to create or join an encrypted private-channel workspace. Sign in independently on each device and use the same sync passphrase. See the [device sync guide](device-sync.md) for setup, access review, and recovery.
+
 ## Keep the application available
 
 Closing the main window hides it in the system tray. Use **Quit TeleGate** from the tray menu to stop the application and local server. The tray also provides access to pending requests and global pause.

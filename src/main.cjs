@@ -5,15 +5,17 @@ const {createIdentityResolver,identityFromEntity}=require('./identity.cjs');cons
 const approvalSmoke=process.argv.includes('--approval-smoke')&&!app.isPackaged;
 if(approvalSmoke)app.setPath('userData',path.join(app.getPath('temp'),'telegate-approval-smoke-'+process.pid));
 let win,popup,tray,server,config,file,jobs,memories,quitting=false,notificationReady=false,notificationWanted=false;
+const {SyncService}=require('./sync-service.cjs'),{TelegramSyncTransport}=require('./sync-telegram.cjs'),SyncCore=require('./sync-core.cjs'),SyncLocal=require('./sync-local.cjs');
+let sync, syncData=null, syncTimer, syncSetupBusy=false;const syncNotified=new Set();
 const challenges=new Map(),notified=new Set();const assets=path.join(__dirname,'assets');
 const lock=s=>{if(!safeStorage.isEncryptionAvailable())throw Error('Windows secure storage unavailable');return safeStorage.encryptString(s).toString('base64');};
 const unlock=s=>safeStorage.decryptString(Buffer.from(s,'base64'));
 function save(){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+'.tmp',JSON.stringify(config));fs.renameSync(file+'.tmp',file);}
 function proxy(account){const a=config.accounts.find(a=>a.id===account);return a?.proxy?JSON.parse(unlock(a.proxy)):config.proxy?JSON.parse(unlock(config.proxy)):undefined;}
 async function client(id){const a=config.accounts.find(a=>a.id===id);if(!a||!a.session)throw Error('Account is not logged in');return tg.connect({...a,apiHash:unlock(a.apiHash),proxy:normalizeProxy(proxy(id))},unlock(a.session));}
-function accountList(){return config.accounts.map(({id,label,session,proxy:p})=>({id,label,loggedIn:!!session,connected:!!tg.clients.get(id)?.connected,status:tg.statuses.get(id),hasOwnProxy:!!p}));}
+function accountList(){return config.accounts.map(({id,label,telegramId,session,proxy:p})=>({id,label,telegramId,loggedIn:!!session,connected:!!tg.clients.get(id)?.connected,status:tg.statuses.get(id),hasOwnProxy:!!p}));}
 function navigate(page='approvals'){win.show();win.focus();win.webContents.send('navigate',page);}
-function rebuildTray(){if(!tray||!config)return;tray.setImage(nativeImage.createFromPath(path.join(assets,gate.pending.size?'tray-pending.png':'icon.png')).resize({width:32,height:32}));tray.setToolTip(`TeleGate · ${gate.pending.size} pending${gate.rules.paused?' · AI paused':''}`);tray.setContextMenu(Menu.buildFromTemplate([{label:'Open TeleGate',click:()=>navigate()},{label:`Access requests (${gate.pending.size})`,click:()=>navigate()},{label:'Rules and permissions',click:()=>navigate('permissions')},{label:gate.rules.paused?'Resume AI access':'Pause all AI access',click:()=>pause('*',!gate.rules.paused)},{type:'separator'},{label:'Quit TeleGate',click:()=>{quitting=true;app.quit();}}]));}
+function rebuildTray(){if(!tray||!config)return;tray.setImage(nativeImage.createFromPath(path.join(assets,gate.pending.size?'tray-pending.png':'icon.png')).resize({width:32,height:32}));tray.setToolTip(`TeleGate · ${gate.pending.size} pending${gate.rules.paused?' · AI paused':''}`);tray.setContextMenu(Menu.buildFromTemplate([{label:'Open TeleGate',click:()=>navigate()},{label:`Access requests (${gate.pending.size})`,click:()=>navigate()},{label:'Rules and permissions',click:()=>navigate('permissions')},{label:'Device sync',click:()=>navigate('sync')},{label:gate.rules.paused?'Resume AI access':'Pause all AI access',click:()=>pause('*',!gate.rules.paused)},{type:'separator'},{label:'Quit TeleGate',click:()=>{quitting=true;app.quit();}}]));}
 function broadcast(){for(const w of [win,popup])if(w&&!w.isDestroyed())w.webContents.send('changed');rebuildTray();}
 function audit(entry){config.audit=[{time:new Date().toISOString(),...entry},...config.audit].slice(0,3000);save();broadcast();}
 function pause(account,enabled){gate.rules.pause(account,enabled);if(enabled)gate.cancelAccount(account);broadcast();}
@@ -26,7 +28,20 @@ function window(options={},approval=false){const w=new BrowserWindow({width:1240
 async function command(event,cmd,a={}){
  if(![win,popup].some(w=>w&&!w.isDestroyed()&&w.webContents===event.sender))throw Error('Untrusted sender');
  switch(cmd){
- case 'state':return {...approvalState(),memories:memories.snapshot(),policies:config.policies,audit:config.audit,endpoint:'http://127.0.0.1:19741/mcp',token:unlock(config.token),proxy:proxy()||{type:'none',host:'127.0.0.1',port:1080},jobs:[...jobs.items.values()].map(({args,results,result,...j})=>j)};
+ case 'state':return {...approvalState(),sync:sync?.status(),memories:memories.snapshot(),policies:config.policies,audit:config.audit,endpoint:'http://127.0.0.1:19741/mcp',token:unlock(config.token),proxy:proxy()||{type:'none',host:'127.0.0.1',port:1080},jobs:[...jobs.items.values()].map(({args,results,result,...j})=>j)};
+ case 'sync-setup':{
+  if(event.sender!==win.webContents||a.confirm!==true)throw Error('Confirm sync setup in the main window.');
+  if(syncData||sync?.busy||syncSetupBusy)throw Error('A workspace is already configured or connecting.');
+  if(!['create','join'].includes(a.mode))throw Error('Choose Create or Join');
+  if(typeof a.password!=='string'||a.password.length<16)throw Error('Use a passphrase of at least 16 characters.');
+  syncSetupBusy=true;try{const c=await client(a.account);const settings=a.mode==='create'?await TelegramSyncTransport.create(c,a.password):await TelegramSyncTransport.join(c,a.channel,a.password);
+  const account=config.accounts.find(x=>x.id===a.account);account.telegramId=settings.owner;
+  syncData={...settings,account:a.account,enabled:true,state:SyncCore.newState()};config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();void sync.run();return true;}finally{syncSetupBusy=false;}
+ }
+ case 'sync-now':if(!syncData)throw Error('Set up sync first');await sync.run();return sync.status();
+ case 'sync-toggle':if(sync.busy)throw Error('Sync is running. Try again shortly.');if(syncData){syncData.enabled=!!a.enabled;config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();}return true;
+ case 'sync-disconnect':if(sync.busy)throw Error('Sync is running. Try again shortly.');syncData=null;delete config.syncCipher;save();broadcast();return true;
+ case 'sync-review':if(event.sender!==win.webContents||a.confirm!==true)throw Error('Review this change in the main window.');return sync.review(a);
  case 'approval-state':return approvalState();
  case 'notification-ready':if(event.sender===popup?.webContents){notificationReady=true;if(notificationWanted&&gate.pending.size&&config.notifications.dndUntil<=Date.now())popup.showInactive();}return true;
  case 'dismiss-notification':notificationWanted=false;popup?.hide();return true;
@@ -63,6 +78,26 @@ async function boot(){
  gate.grants=new Map((config.grants||[]).map(g=>[g.key,g]));gate.persistGrants=list=>{config.grants=list;save();};
  gate.metadata=async(account,chat)=>{const c=await client(account),e=await c.getEntity(chat),m=identityFromEntity(e);if(gate.rules.rules.some(r=>r.selector.folderIds.length)){const ds=await c.getDialogs({limit:undefined}),d=ds.find(d=>require('telegram/Utils').getPeerId(d.entity).toString()===chat);m.folderIds=d?[d.archived?1:0,...(await advanced.folderData(c)).filter(f=>advanced.matchesFolder(f,d)).map(f=>f.id)]:[];}return m;};
  memories=new MemoryBook(config.memoriesCipher?JSON.parse(unlock(config.memoriesCipher)):{},state=>{const previous=config.memoriesCipher;try{config.memoriesCipher=lock(JSON.stringify(state));save();}catch(e){config.memoriesCipher=previous;throw e;}});
+ syncData=config.syncCipher?JSON.parse(unlock(config.syncCipher)):null;
+ const local=()=>({rules:gate.rules.rules,memories:memories.entries,grants:[...gate.grants.values()]});
+ sync=new SyncService({load:()=>syncData,notify:()=>{broadcast();if(quitting||approvalSmoke)return;const pending=syncData?.state.pending||[],fresh=pending.filter(p=>!syncNotified.has(p.fingerprint));for(const p of pending)syncNotified.add(p.fingerprint);if(fresh.length){const notification=new Notification({title:'TeleGate · Sync review',body:'Device sync has changes that need your review. Open Device sync to compare versions.'});notification.on('click',()=>navigate('sync'));notification.show();}},
+  mapping:async()=>{for(const a of config.accounts)if(a.session&&!a.telegramId){try{a.telegramId=(await (await client(a.id)).getMe()).id.toString();}catch{}}return SyncLocal.accountMap(config.accounts);},
+  current:map=>SyncLocal.collect(local(),map,syncData?.state.base||{}),
+  transport:async x=>new TelegramSyncTransport(await client(x.account),x.channel),
+  commit:(next,records,map)=>{
+   const previous={config:structuredClone(config),sync:syncData,rules:gate.rules.snapshot(),memory:memories.snapshot(),grants:[...gate.grants]};
+   try{
+    if(records){const data=SyncLocal.materialize(records,map,local());
+     if(SyncCore.stable(data.rules)!==SyncCore.stable(gate.rules.rules)){gate.rules.rules=data.rules;gate.rules.revision++;}
+     if(SyncCore.stable(data.memories)!==SyncCore.stable(memories.entries)){memories.entries=data.memories;memories.revision++;}
+     gate.grants=new Map(data.grants.map(g=>[g.key,g]));config.rulesState=gate.rules.snapshot();config.memoriesCipher=lock(JSON.stringify(memories.snapshot()));config.grants=[...gate.grants.values()];
+    }
+    syncData=next;config.syncCipher=lock(JSON.stringify(next));save();
+   }catch(e){config=previous.config;syncData=previous.sync;gate.rules.rules=previous.rules.rules;gate.rules.revision=previous.rules.revision;memories.entries=previous.memory.entries;memories.revision=previous.memory.revision;gate.grants=new Map(previous.grants);throw e;}
+   if(records)void gate.reconcile().catch(()=>{});
+  }
+ });
+ if(!approvalSmoke){syncTimer=setInterval(()=>void sync.run(),30000);syncTimer.unref();}
  jobs=new Jobs(config.jobsCipher?JSON.parse(unlock(config.jobsCipher)):[],items=>{config.jobsCipher=lock(JSON.stringify(items));save();});save();ipcMain.handle('command',command);
  win=window();win.on('close',e=>{if(!quitting){e.preventDefault();win.hide();}});tray=new Tray(nativeImage.createFromPath(path.join(assets,'icon.png')).resize({width:32,height:32}));tray.on('double-click',()=>navigate());tray.on('click',()=>navigate());rebuildTray();
  if(approvalSmoke)win.webContents.once('did-finish-load',()=>require('../test/approval-smoke.cjs')({app,gate,memories,win,getPopup:()=>popup,getTray:()=>tray,setAccounts:a=>{config.accounts=a;},finish:()=>{quitting=true;app.quit();}}));
@@ -70,4 +105,4 @@ async function boot(){
  const timer=setInterval(()=>{if(config.notifications.dndUntil&&config.notifications.dndUntil<=Date.now()){config.notifications.dndUntil=0;save();showNotification();}},1000);timer.unref();
 }
 if(!app.requestSingleInstanceLock())app.quit();else app.whenReady().then(boot).catch(e=>{console.error(e);app.quit();});
-app.on('second-instance',()=>win?.show());app.on('before-quit',()=>{quitting=true;gate.close();server?.close();for(const c of tg.clients.values())c.disconnect();});
+app.on('second-instance',()=>win?.show());app.on('before-quit',()=>{quitting=true;clearInterval(syncTimer);gate.close();server?.close();for(const c of tg.clients.values())c.disconnect();});

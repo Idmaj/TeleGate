@@ -23,6 +23,7 @@ Dependencies and the Electron distribution are downloaded during installation. C
 | `src/access.cjs`, `src/permitted-search.cjs` | Permission-aware discovery and search |
 | `src/jobs.cjs` | Background search state and write deduplication |
 | `src/memory.cjs`, `src/memory-access.cjs` | Text-memory persistence, review, and access scope |
+| `src/sync-*.cjs`, `src/sync-ui.js` | Encrypted channel transport, causal merging, local projection, and owner review |
 | Renderer HTML, CSS, and JavaScript | Desktop account management, approval review, and settings |
 | `test/` | Synthetic unit, HTTP, adapter, and Electron UI fixtures |
 

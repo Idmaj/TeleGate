@@ -13,7 +13,7 @@ TeleGate mediates access between a Telegram account and an MCP client. Its contr
 
 Reads are evaluated against account and chat rules, saved grants, and pause state. Unknown or unverified metadata does not grant access. Discovery and cross-chat search default to the currently permitted workspace.
 
-Writes require owner approval for the exact request. Read permissions do not authorize message sending, account changes, rule changes, or memory changes. The MCP interface has no approval endpoint for the assistant to call.
+AI writes require owner approval for the exact request. Device sync is separately enabled by the owner and authorizes automatic encrypted uploads and cleanup in one dedicated private channel. Read permissions do not authorize message sending, account changes, rule changes, or memory changes. The MCP interface has no approval endpoint for the assistant to call.
 
 Rule and memory proposals show before/after state and use revision checks to prevent stale updates. Ordinary read operations do not send read receipts; `mark_read` is a separate approved write.
 
@@ -52,3 +52,7 @@ Use synthetic data for reproductions. Inspect logs, screenshots, and issue attac
 ## Reporting a concern
 
 If private vulnerability reporting is available on the repository, use that channel. Otherwise, contact the repository maintainer privately before sharing credentials, personal data, or an exploit that affects active users. A useful report identifies the affected version, the relevant trust boundary, and a minimal reproduction with synthetic data.
+
+## Optional device sync
+
+Sync uploads only memory, read rules, and saved read permissions, encrypted before leaving the device. Account mapping uses Telegram IDs. Sync keys and local merge state are encrypted in the application vault. Tokens, sessions, audit logs, and pending approvals are excluded. Access-expanding changes require local review, while concurrent record changes retain all versions. See [Device sync](docs/device-sync.md) for passphrase handling, retention, trusted-device boundaries, and recovery limitations.

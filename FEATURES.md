@@ -60,6 +60,10 @@ Global and per-chat memory stores titled text notes for durable context, communi
 
 The desktop editor supports adding, editing, and deleting notes. Assistants can propose a related set of changes for owner review. Maintenance instructions favor concise notes, updating existing information, removing obsolete duplication, and checking consistency. Notes are interpreted by the assistant; their meaning is not enforced as an access policy.
 
+## Device synchronization
+
+Opt-in private-channel synchronization shares encrypted memory, read rules, and saved read permissions across independent installations. It supports account identity mapping, offline retries, deletion tracking, concurrent-edit review, and destination-device approval for access changes. Each device retains three confirmed snapshots of its own. See [Device sync](docs/device-sync.md) for setup and boundaries.
+
 ## Desktop experience
 
 - Frameless approval notifications with chat identity and human-readable request details.

@@ -14,6 +14,7 @@ TeleGate is a Windows desktop application that connects MCP-compatible assistant
 - **Rich messaging:** compose formatted messages, send media and albums, reply in topics, create polls, and manage scheduled messages.
 - **Multiple accounts:** manage independent Telegram sessions with optional default or per-account proxy settings.
 - **Desktop controls:** review requests in a notification card or approval center, inspect decision history, and pause AI access from the application or system tray.
+- **Device sync:** synchronize encrypted memory and read policies through a private Telegram channel, with conflict review and local approval for increased access.
 - **Persistent context:** maintain global and per-chat notes that accompany authorized results and help assistants follow communication and workflow preferences.
 
 Read operations do not mark messages as read. Sending read receipts is a separate operation that requires approval.
@@ -44,7 +45,7 @@ See the [setup guide](docs/getting-started.md) for account sign-in, client confi
 
 Reads ask for approval unless a saved permission or rule authorizes them. Deny rules take precedence over ask rules, followed by allow rules. Chat discovery and cross-chat search default to the permitted workspace, so an assistant can find and use an authorized chat without requesting access to the complete directory.
 
-Writes always require approval for the exact request. Assistants can propose changes to access rules and saved memory, but those changes require a separate review. The MCP interface does not expose an approval tool.
+AI writes always require approval for the exact request. Separately enabled device sync authorizes automatic maintenance of its dedicated channel. Assistants can propose changes to access rules and saved memory, but those changes require a separate review. The MCP interface does not expose an approval tool.
 
 ## Local storage and privacy
 
@@ -59,6 +60,7 @@ Information returned to an assistant is handled by that assistant and its provid
 | [Feature reference](FEATURES.md) | Capabilities, supported workflows, and practical limits |
 | [Setup guide](docs/getting-started.md) | Accounts, MCP clients, proxies, and upgrades |
 | [MCP reference](docs/mcp-reference.md) | Tool groups, search behavior, permissions, and request conventions |
+| [Device sync](docs/device-sync.md) | Private-channel setup, merging, review, and encryption |
 | [Development guide](docs/development.md) | Architecture, tests, packaging, and repository hygiene |
 | [Security](SECURITY.md) | Authentication, storage, approvals, and sensitive-data handling |
 

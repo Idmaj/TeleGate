@@ -6,6 +6,8 @@
 
 TeleGate is a Windows desktop application that connects MCP-compatible assistants to personal Telegram accounts through a local HTTP server. It combines cross-chat search, message context, and Telegram account management with configurable read permissions and explicit approval for writes.
 
+<img src="docs/assets/telegate-overview.png" width="100%" alt="TeleGate access requests, permissions, encrypted device sync, and proxy management interface">
+
 ## Highlights
 
 - **Scoped access:** allow, deny, or review reads by account, chat, folder, chat type, and operation. Permissions can expire or remain active until revoked.

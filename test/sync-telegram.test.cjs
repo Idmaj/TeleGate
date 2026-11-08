@@ -10,3 +10,10 @@ test('public/shared channels, missing workspace and oversized attachments fail c
  c.messages.push({id:100,message:'TeleGate encrypted sync v1 test',media:{document:{size:C.MAX_BYTES*2}}});await assert.rejects(t.read(0),/oversized/);
  c.messages.splice(0,1);await assert.rejects(t.checkHeader(settings),/deleted/);
 });
+test('discovery finds a verified default-name workspace and ignores renamed or invalid channels',async()=>{
+ const c=mockTelegram(),settings=await T.create(c,'synthetic shared passphrase');
+ assert.deepEqual(await T.discover(c),[{channel:settings.channel,title:'TeleGate Sync',workspace:settings.workspace}]);
+ c.entity.title='Renamed workspace';assert.deepEqual(await T.discover(c),[]);assert.equal((await T.join(c,settings.channel,'synthetic shared passphrase')).key,settings.key);
+ c.entity.title='TeleGate Sync';c.subscribers=2;assert.deepEqual(await T.discover(c),[]);c.subscribers=1;
+ c.messages[0].message='TeleGate sync workspace v1\ninvalid json';assert.deepEqual(await T.discover(c),[]);
+});

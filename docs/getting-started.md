@@ -25,7 +25,13 @@ Packaged distributions provide a Windows installer and a portable executable. Th
 3. Complete Telegram verification and, if enabled, two-step verification.
 4. Repeat the process to add another account.
 
-Configure an optional proxy in **Telegram proxy** before sign-in if your network requires one. SOCKS4, SOCKS5, and MTProto are supported. A default proxy can be overridden for each account. Proxy connections are disabled by default; use the host and port appropriate for your environment.
+Configure connection routing in **Telegram proxy** before sign-in if your network requires it. Keep multiple SOCKS4, SOCKS5, or MTProto profiles, test them, and choose direct connection, one fixed proxy, or automatic failover. The default policy applies to sign-in and can be overridden for each account. Automatic mode can rotate through selected proxies and optionally include direct connection, in either direct-first or proxy-first order. You can also switch a connected account to its next route manually.
+
+### Account sign-in steps
+
+Adding an account walks through API credentials, phone number, the Telegram verification code, and a two-step verification password when enabled. Only the fields for the current step are shown. The password step displays Telegram’s hint when one exists.
+
+The code step identifies Telegram’s delivery method and offers resending after Telegram’s waiting period. You can change the phone number or cancel sign-in. Incorrect codes and passwords can be retried in place; expired codes require a fresh code. Telegram rate limits are shown with a waiting time. Password recovery and creating a new Telegram account use the official Telegram app.
 
 ## Configure an MCP client
 
@@ -85,6 +91,6 @@ The existing application profile retains accounts, rules, memory, and the MCP to
 | Search returns no results | Inspect the response's coverage and continuation values. The default scope includes only permitted chats. |
 | Approval does not appear | Inspect **Access requests**, notification privacy settings, and do-not-disturb. Requests can expire while notifications are suppressed. |
 | Telegram reports a wait or permission error | Inspect the returned retry information and the connected account's Telegram privileges. |
-| Connection fails behind a proxy | Verify the proxy type, address, port, and credentials for the relevant account. |
+| Connection fails behind a proxy | Test the route in **Telegram proxy**, verify its type, address, port, and credentials, or enable automatic failover with another route. |
 
 When reporting a problem, share a minimal reproduction with synthetic data. Do not attach application vaults, session strings, tokens, or unredacted Telegram content.

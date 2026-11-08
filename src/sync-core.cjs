@@ -64,13 +64,13 @@ function safeRuleChange(before,after){
  return false; // Narrowing selectors or deleting an Ask/Deny can expand access.
 }
 function automatic(id,before,after){if(id.startsWith('memory:'))return true;if(id.startsWith('grant:'))return !after;return safeRuleChange(before,after);}
-function project(s,current,canMap){
+function project(s,current,canMap,autoPermissions=false){
  const out=structuredClone(current),pending=[];
  for(const[id,versions]of Object.entries(s.records)){
   const before=current[id]??null,fingerprint=hash(versions);if(s.dismissed[id]===fingerprint)continue;
   if(versions.length===1&&stable(before)===stable(versions[0].value))continue;
   const mapped=versions.every(v=>!v.value||canMap(v.value));
-  if(versions.length===1&&mapped&&automatic(id,before,versions[0].value)){if(versions[0].value===null)delete out[id];else out[id]=versions[0].value;}
+  if(versions.length===1&&mapped&&(autoPermissions||automatic(id,before,versions[0].value))){if(versions[0].value===null)delete out[id];else out[id]=versions[0].value;}
   else pending.push({id,fingerprint,before,versions,reason:!mapped?'Sign in to the matching Telegram account':versions.length>1?'Concurrent changes require a choice':'Review access change on this device',blocked:!mapped});
  }s.pending=pending;s.base=structuredClone(out);return out;
 }

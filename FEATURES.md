@@ -8,7 +8,8 @@ TeleGate provides a permission-controlled Telegram workspace for MCP-compatible 
 | --- | --- |
 | Multiple accounts | Maintain separate Telegram sessions and account aliases. |
 | Account sign-in | Authenticate with an API ID, API Hash, phone verification, and an optional two-step password. |
-| Proxy configuration | Use SOCKS4, SOCKS5, or MTProto with a default configuration or per-account overrides. |
+| Proxy profiles | Keep a reusable list of SOCKS4, SOCKS5, and MTProto proxies, test each route, and select a default or per-account policy. |
+| Connection failover | Use direct connection, one fixed proxy, or automatic rotation across selected working proxies with optional direct fallback. |
 | Connection status | Inspect connectivity and errors, and reconnect an account from the desktop interface. |
 | Local MCP endpoint | Connect through authenticated Streamable HTTP on the loopback interface. |
 
@@ -62,7 +63,7 @@ The desktop editor supports adding, editing, and deleting notes. Assistants can 
 
 ## Device synchronization
 
-Opt-in private-channel synchronization shares encrypted memory, read rules, and saved read permissions across independent installations. It supports account identity mapping, offline retries, deletion tracking, concurrent-edit review, and destination-device approval for access changes. Each device retains three confirmed snapshots of its own. See [Device sync](docs/device-sync.md) for setup and boundaries.
+Opt-in private-channel synchronization shares encrypted memory, read rules, and saved read permissions across independent installations. It supports account identity mapping, offline retries, deletion tracking, concurrent-edit review, and automatic access synchronization with an optional destination-device review mode. Setup separates creating a new workspace from joining an existing one and finds default-name sync channels automatically. Each device retains three confirmed snapshots of its own. See [Device sync](docs/device-sync.md) for setup and boundaries.
 
 ## Desktop experience
 

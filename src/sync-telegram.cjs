@@ -20,6 +20,22 @@ class TelegramSyncTransport{
  }
  async send(buffer,device){const m=await this.client.sendFile(this.channel,{file:new CustomFile('telegate-sync-v1.bin',buffer.length,'',buffer),caption:'TeleGate encrypted sync v1 '+device,forceDocument:true,silent:true,workers:1});return m.id;}
  async remove(ids){if(ids.length)await this.client.deleteMessages(this.channel,ids,{revoke:true});}
+ static async discover(client){
+  const dialogs=await client.getDialogs({limit:undefined}),owner=(await client.getMe()).id.toString(),found=[];
+  for(const dialog of dialogs){
+   const entity=dialog.entity;
+   if(entity?.title?.trim().toLowerCase()!=='telegate sync'||!entity.creator||!entity.broadcast||entity.megagroup||entity.username||entity.usernames?.some(u=>u.active))continue;
+   const channel=getPeerId(entity).toString(),transport=new TelegramSyncTransport(client,channel);
+   try{await transport.verify();const {header}=await transport.workspaceHeader(owner);found.push({channel,title:entity.title,workspace:header.workspace});}catch(error){if(error.seconds||error.code>=500||!/Sync requires|workspace|Workspace/.test(error.message))throw error;}
+  }
+  return found;
+ }
+ async workspaceHeader(owner){
+  const messages=await this.client.getMessages(this.channel,{search:MARKER,limit:20});const headers=messages.filter(m=>m.message?.startsWith(MARKER+'\n'));if(headers.length!==1)throw Error('Expected exactly one TeleGate workspace message in this channel.');
+  let h;try{h=JSON.parse(headers[0].message.slice(MARKER.length+1));}catch{throw Error('Invalid workspace message.');}
+  if(h.v!==1||!/^[a-f0-9-]{36}$/.test(h.workspace)||h.owner!==owner||!/^[a-f0-9]{32}$/i.test(h.salt)||typeof h.proof!=='string')throw Error('Workspace owner or format does not match.');
+  return {header:h,id:headers[0].id};
+ }
  static async create(client,password){
   const owner=(await client.getMe()).id.toString(),workspace=randomUUID(),salt=randomBytes(16).toString('hex'),key=await deriveKey(password,salt);
   const result=await client.invoke(new Api.channels.CreateChannel({title:'TeleGate Sync',about:'Private encrypted TeleGate rules and memory synchronization. Keep this channel private and do not delete its workspace message.',broadcast:true}));
@@ -32,10 +48,9 @@ class TelegramSyncTransport{
  static async join(client,channel,password){
   if(!/^-100\d+$/.test(channel))throw Error('Enter the numeric channel ID from the first device.');
   const transport=new TelegramSyncTransport(client,channel);await transport.verify();
-  const messages=await client.getMessages(channel,{search:MARKER,limit:20});const headers=messages.filter(m=>m.message?.startsWith(MARKER+'\n'));if(headers.length!==1)throw Error('Expected exactly one TeleGate workspace message in this channel.');
-  const h=JSON.parse(headers[0].message.slice(MARKER.length+1));if(h.v!==1||!/^[a-f0-9-]{36}$/.test(h.workspace)||h.owner!==(await client.getMe()).id.toString())throw Error('Workspace owner or format does not match.');
+  const {header:h,id}=await transport.workspaceHeader((await client.getMe()).id.toString());
   const key=await deriveKey(password,h.salt);if(open(Buffer.from(h.proof,'base64'),key,h.workspace).purpose!==MARKER)throw Error('Invalid workspace proof');
-  return {channel,workspace:h.workspace,key,headerId:headers[0].id,owner:h.owner};
+  return {channel,workspace:h.workspace,key,headerId:id,owner:h.owner};
  }
  async checkHeader(settings){const messages=await this.client.getMessages(this.channel,{ids:[settings.headerId]});const m=messages[0];if(!m?.message?.startsWith(MARKER+'\n'))throw Error('Workspace message was deleted. Sync stopped.');const h=JSON.parse(m.message.slice(MARKER.length+1));if(h.workspace!==settings.workspace||h.owner!==settings.owner||open(Buffer.from(h.proof,'base64'),settings.key,settings.workspace).purpose!==MARKER)throw Error('Workspace identity changed. Sync stopped.');}
 }

@@ -1,19 +1,43 @@
 const {app,BrowserWindow,ipcMain,safeStorage,Notification,Tray,Menu,nativeImage,screen}=require('electron');
-const fs=require('node:fs'),path=require('node:path');const {randomUUID,randomBytes}=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path');const {randomBytes}=require('node:crypto');
 const {Gate}=require('./gate.cjs'),{RuleBook}=require('./rules.cjs'),{Jobs}=require('./jobs.cjs');const {MemoryBook}=require('./memory.cjs');
-const {createIdentityResolver,identityFromEntity}=require('./identity.cjs');const tg=require('./telegram.cjs'),advanced=require('./advanced.cjs');const {serve}=require('./server.cjs'),{normalizeProxy}=require('./proxy.cjs');
+const {createIdentityResolver,identityFromEntity}=require('./identity.cjs');const tg=require('./telegram.cjs'),advanced=require('./advanced.cjs');const {serve}=require('./server.cjs'),{normalizeProxy}=require('./proxy.cjs'),ProxyManager=require('./proxy-manager.cjs');
 const approvalSmoke=process.argv.includes('--approval-smoke')&&!app.isPackaged;
 if(approvalSmoke)app.setPath('userData',path.join(app.getPath('temp'),'telegate-approval-smoke-'+process.pid));
-let win,popup,tray,server,config,file,jobs,memories,quitting=false,notificationReady=false,notificationWanted=false;
+let win,popup,tray,server,config,file,jobs,memories,proxyState,quitting=false,notificationReady=false,notificationWanted=false;
 const {SyncService}=require('./sync-service.cjs'),{TelegramSyncTransport}=require('./sync-telegram.cjs'),SyncCore=require('./sync-core.cjs'),SyncLocal=require('./sync-local.cjs');
 let sync, syncData=null, syncTimer, syncSetupBusy=false;const syncNotified=new Set();
-const challenges=new Map(),notified=new Set();const assets=path.join(__dirname,'assets');
+const notified=new Set();
+const {LoginService}=require('./login.cjs');
+const proxyRoutes=new Map(),preferredProxyRoutes=new Map(),proxyHealth=new Map();
+const login=new LoginService({connect:account=>connectAccount(account,'',proxyState.defaultPolicy),release:async id=>disconnectAccount(id,true),complete:(account,c,user)=>{if(config.accounts.some(a=>a.telegramId===user.id.toString()))throw Error('This Telegram account is already added.');const added={...account,telegramId:user.id.toString(),apiHash:lock(account.apiHash),session:lock(c.session.save())};config.accounts.push(added);try{save();}catch(e){config.accounts.pop();throw e;}},notify:broadcast});const assets=path.join(__dirname,'assets');
 const lock=s=>{if(!safeStorage.isEncryptionAvailable())throw Error('Windows secure storage unavailable');return safeStorage.encryptString(s).toString('base64');};
 const unlock=s=>safeStorage.decryptString(Buffer.from(s,'base64'));
 function save(){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+'.tmp',JSON.stringify(config));fs.renameSync(file+'.tmp',file);}
-function proxy(account){const a=config.accounts.find(a=>a.id===account);return a?.proxy?JSON.parse(unlock(a.proxy)):config.proxy?JSON.parse(unlock(config.proxy)):undefined;}
-async function client(id){const a=config.accounts.find(a=>a.id===id);if(!a||!a.session)throw Error('Account is not logged in');return tg.connect({...a,apiHash:unlock(a.apiHash),proxy:normalizeProxy(proxy(id))},unlock(a.session));}
-function accountList(){return config.accounts.map(({id,label,telegramId,session,proxy:p})=>({id,label,telegramId,loggedIn:!!session,connected:!!tg.clients.get(id)?.connected,status:tg.statuses.get(id),hasOwnProxy:!!p}));}
+function accountProxyPolicy(id){const account=config.accounts.find(a=>a.id===id);return account?.proxyPolicy?JSON.parse(unlock(account.proxyPolicy)):{mode:'inherit'};}
+function routeName(id){return id==='direct'?'Direct connection':proxyState.profiles.find(p=>p.id===id)?.name||id;}
+async function disconnectAccount(id,clearStatus=false){const c=tg.clients.get(id);tg.clients.delete(id);if(clearStatus)tg.statuses.delete(id);await c?.disconnect().catch(()=>{});proxyRoutes.delete(id);preferredProxyRoutes.delete(id);}
+async function connectAccount(account,session,overridePolicy){
+ const policy=overridePolicy||accountProxyPolicy(account.id),preferred=preferredProxyRoutes.get(account.id)||proxyRoutes.get(account.id),routes=ProxyManager.candidates(proxyState,policy,preferred);const failures=[];
+ for(const route of routes){
+  if(proxyRoutes.get(account.id)!==route.id&&tg.clients.has(account.id))await disconnectAccount(account.id);
+  const started=Date.now();
+  try{const c=await tg.connect({...account,proxy:normalizeProxy(route)},session);proxyRoutes.set(account.id,route.id);preferredProxyRoutes.delete(account.id);proxyHealth.set(account.id+':'+route.id,{ok:true,at:Date.now(),latency:Date.now()-started});return c;}
+  catch(error){failures.push(routeName(route.id)+': '+error.message);proxyHealth.set(account.id+':'+route.id,{ok:false,at:Date.now(),error:error.message});await disconnectAccount(account.id);}
+ }
+ throw Error('Unable to connect through the available routes. '+failures.join(' · '));
+}
+async function client(id){const a=config.accounts.find(a=>a.id===id);if(!a||!a.session)throw Error('Account is not logged in');return connectAccount({...a,apiHash:unlock(a.apiHash)},unlock(a.session));}
+function accountList(){return config.accounts.map(({id,label,telegramId,session,proxyPolicy})=>({id,label,telegramId,loggedIn:!!session,connected:!!tg.clients.get(id)?.connected,status:tg.statuses.get(id),hasOwnProxy:!!proxyPolicy,proxyRoute:proxyRoutes.get(id),proxyRouteName:proxyRoutes.has(id)?routeName(proxyRoutes.get(id)):null}));}
+function proxyView(){return {...ProxyManager.publicState(proxyState),accounts:config.accounts.map(a=>({id:a.id,label:a.label,policy:accountProxyPolicy(a.id),activeRoute:proxyRoutes.get(a.id)||null,activeRouteName:proxyRoutes.has(a.id)?routeName(proxyRoutes.get(a.id)):null})),health:Object.fromEntries(proxyHealth)};}
+function persistProxyState(){config.proxyStateCipher=lock(JSON.stringify(proxyState));save();}
+function loadProxyConfiguration(){
+ if(config.proxyStateCipher){proxyState=JSON.parse(unlock(config.proxyStateCipher));return;}
+ proxyState=ProxyManager.newState();
+ if(config.proxy){const settings=JSON.parse(unlock(config.proxy));if(settings.type&&settings.type!=='none'){const p=ProxyManager.profile({name:'Imported default proxy',...settings});proxyState.profiles.push(p);proxyState.defaultPolicy={mode:'profile',profileId:p.id};}delete config.proxy;}
+ for(const account of config.accounts){if(!account.proxy)continue;const settings=JSON.parse(unlock(account.proxy));if(settings.type==='none')account.proxyPolicy=lock(JSON.stringify({mode:'direct'}));else{const p=ProxyManager.profile({name:'Imported · '+account.label,...settings});proxyState.profiles.push(p);account.proxyPolicy=lock(JSON.stringify({mode:'profile',profileId:p.id}));}delete account.proxy;}
+ config.proxyStateCipher=lock(JSON.stringify(proxyState));save();
+}
 function navigate(page='approvals'){win.show();win.focus();win.webContents.send('navigate',page);}
 function rebuildTray(){if(!tray||!config)return;tray.setImage(nativeImage.createFromPath(path.join(assets,gate.pending.size?'tray-pending.png':'icon.png')).resize({width:32,height:32}));tray.setToolTip(`TeleGate · ${gate.pending.size} pending${gate.rules.paused?' · AI paused':''}`);tray.setContextMenu(Menu.buildFromTemplate([{label:'Open TeleGate',click:()=>navigate()},{label:`Access requests (${gate.pending.size})`,click:()=>navigate()},{label:'Rules and permissions',click:()=>navigate('permissions')},{label:'Device sync',click:()=>navigate('sync')},{label:gate.rules.paused?'Resume AI access':'Pause all AI access',click:()=>pause('*',!gate.rules.paused)},{type:'separator'},{label:'Quit TeleGate',click:()=>{quitting=true;app.quit();}}]));}
 function broadcast(){for(const w of [win,popup])if(w&&!w.isDestroyed())w.webContents.send('changed');rebuildTray();}
@@ -28,7 +52,7 @@ function window(options={},approval=false){const w=new BrowserWindow({width:1240
 async function command(event,cmd,a={}){
  if(![win,popup].some(w=>w&&!w.isDestroyed()&&w.webContents===event.sender))throw Error('Untrusted sender');
  switch(cmd){
- case 'state':return {...approvalState(),sync:sync?.status(),memories:memories.snapshot(),policies:config.policies,audit:config.audit,endpoint:'http://127.0.0.1:19741/mcp',token:unlock(config.token),proxy:proxy()||{type:'none',host:'127.0.0.1',port:1080},jobs:[...jobs.items.values()].map(({args,results,result,...j})=>j)};
+ case 'state':return {...approvalState(),sync:sync?.status(),login:login.status(),memories:memories.snapshot(),policies:config.policies,audit:config.audit,endpoint:'http://127.0.0.1:19741/mcp',token:unlock(config.token),proxy:proxyView(),jobs:[...jobs.items.values()].map(({args,results,result,...j})=>j)};
  case 'sync-setup':{
   if(event.sender!==win.webContents||a.confirm!==true)throw Error('Confirm sync setup in the main window.');
   if(syncData||sync?.busy||syncSetupBusy)throw Error('A workspace is already configured or connecting.');
@@ -36,7 +60,14 @@ async function command(event,cmd,a={}){
   if(typeof a.password!=='string'||a.password.length<16)throw Error('Use a passphrase of at least 16 characters.');
   syncSetupBusy=true;try{const c=await client(a.account);const settings=a.mode==='create'?await TelegramSyncTransport.create(c,a.password):await TelegramSyncTransport.join(c,a.channel,a.password);
   const account=config.accounts.find(x=>x.id===a.account);account.telegramId=settings.owner;
-  syncData={...settings,account:a.account,enabled:true,state:SyncCore.newState()};config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();void sync.run();return true;}finally{syncSetupBusy=false;}
+  syncData={...settings,account:a.account,enabled:true,autoPermissions:a.autoPermissions!==false,state:SyncCore.newState()};config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();void sync.run();return true;}finally{syncSetupBusy=false;}
+ }
+ case 'sync-discover':if(event.sender!==win.webContents)throw Error('Find sync channels from the main window.');return TelegramSyncTransport.discover(await client(a.account));
+ case 'sync-permissions':{
+  if(event.sender!==win.webContents)throw Error('Change sync settings in the main window.');
+  if(!syncData)throw Error('Set up sync first');if(sync.busy)throw Error('Sync is running. Try again shortly.');
+  if(typeof a.enabled!=='boolean')throw Error('Choose automatic or manual permission sync');
+  syncData.autoPermissions=a.enabled;config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();void sync.run();return true;
  }
  case 'sync-now':if(!syncData)throw Error('Set up sync first');await sync.run();return sync.status();
  case 'sync-toggle':if(sync.busy)throw Error('Sync is running. Try again shortly.');if(syncData){syncData.enabled=!!a.enabled;config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();}return true;
@@ -60,19 +91,41 @@ async function command(event,cmd,a={}){
  case 'accessible-chats':return require('./access.cjs').list(await client(a.account),gate,a.account,a);
  case 'folders':return advanced.run(await client(a.account),'folders',{});
  case 'dialogs':return tg.dialogs(await client(a.account),a.query||'',a.offset||0,100);
- case 'proxy-get':return proxy(a.account)||{type:'none',host:'127.0.0.1',port:1080};
- case 'proxy':{if(challenges.size)throw Error('Finish login before changing proxy');const {account,inherit,...settings}=a;normalizeProxy(settings);if(account){const target=config.accounts.find(x=>x.id===account);if(!target)throw Error('Unknown account');target.proxy=inherit?undefined:lock(JSON.stringify(settings));await tg.clients.get(account)?.disconnect();tg.clients.delete(account);}else{config.proxy=lock(JSON.stringify(settings));for(const c of tg.clients.values())await c.disconnect();tg.clients.clear();}save();broadcast();return true;}
- case 'reconnect':await tg.clients.get(a.account)?.disconnect();await client(a.account);broadcast();return true;
- case 'login':{if(challenges.size)throw Error('Finish current login first');const id=randomUUID(),account={id,label:a.label||a.phone,apiId:Number(a.apiId),apiHash:a.apiHash};if(!Number.isInteger(account.apiId)||account.apiId<=0||! /^[a-f0-9]{32}$/i.test(a.apiHash))throw Error('Invalid API ID/hash');const c=await tg.connect({...account,proxy:normalizeProxy(proxy())});const ask=kind=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>{challenges.delete(id);reject(Error('Login timed out'));broadcast();},180000);challenges.set(id,{kind,resolve,reject,timer});broadcast();});void c.start({phoneNumber:async()=>a.phone,phoneCode:()=>ask('code'),password:()=>ask('password'),onError:e=>{throw e;}}).then(async()=>{config.accounts.push({...account,apiHash:lock(account.apiHash),session:lock(c.session.save())});save();await c.disconnect();tg.clients.delete(id);broadcast();}).catch(e=>audit({operation:'login',reason:e.message}));return id;}
- case 'challenge':return [...challenges].map(([id,v])=>({id,kind:v.kind}));
- case 'answer':{const r=challenges.get(a.id);if(!r)throw Error('Expired challenge');clearTimeout(r.timer);challenges.delete(a.id);r.resolve(a.value);return true;}
- case 'remove':await tg.clients.get(a.account)?.disconnect();tg.clients.delete(a.account);config.accounts=config.accounts.filter(x=>x.id!==a.account);delete config.policies[a.account];save();broadcast();return true;
+ case 'proxy-state':return proxyView();
+ case 'proxy-profile-save':{
+  if(login.active)throw Error('Finish login before changing proxies');const old=a.id&&proxyState.profiles.find(p=>p.id===a.id),next=ProxyManager.profile({...a,password:a.password===''&&old?.password?old.password:a.password,secret:a.secret===''&&old?.secret?old.secret:a.secret},old?.id);
+  if(old)proxyState.profiles[proxyState.profiles.indexOf(old)]=next;else proxyState.profiles.push(next);persistProxyState();for(const id of [...tg.clients.keys()])await disconnectAccount(id);broadcast();return proxyView();
+ }
+ case 'proxy-profile-delete':{
+  if(login.active)throw Error('Finish login before changing proxies');const usedDefault=proxyState.defaultPolicy.mode==='profile'&&proxyState.defaultPolicy.profileId===a.id,usedAccount=config.accounts.some(x=>accountProxyPolicy(x.id).mode==='profile'&&accountProxyPolicy(x.id).profileId===a.id);if(usedDefault||usedAccount)throw Error('Choose a different connection mode before deleting this proxy.');
+  proxyState.profiles=proxyState.profiles.filter(p=>p.id!==a.id);if(proxyState.defaultPolicy.mode==='auto')proxyState.defaultPolicy.profileIds=proxyState.defaultPolicy.profileIds.filter(id=>id!==a.id);for(const account of config.accounts){const p=accountProxyPolicy(account.id);if(p.mode==='auto'){p.profileIds=p.profileIds.filter(id=>id!==a.id);if(!p.profileIds.length&&!p.includeDirect)account.proxyPolicy=lock(JSON.stringify({mode:'inherit'}));else account.proxyPolicy=lock(JSON.stringify(p));}}persistProxyState();for(const id of [...tg.clients.keys()])await disconnectAccount(id);broadcast();return proxyView();
+ }
+ case 'proxy-policy':{
+  if(login.active)throw Error('Finish login before changing proxies');const target=a.account&&config.accounts.find(x=>x.id===a.account);if(a.account&&!target)throw Error('Unknown account');const next=ProxyManager.policy(a,proxyState.profiles,{account:!!target});if(target)target.proxyPolicy=next.mode==='inherit'?undefined:lock(JSON.stringify(next));else proxyState.defaultPolicy=next;persistProxyState();const ids=target?[target.id]:config.accounts.filter(x=>!x.proxyPolicy).map(x=>x.id);for(const id of ids)await disconnectAccount(id);broadcast();return proxyView();
+ }
+ case 'proxy-test':{
+  const account=config.accounts.find(x=>x.id===a.account);if(!account?.session)throw Error('Choose a signed-in Telegram account for the test.');const route=a.routeId==='direct'?ProxyManager.direct:proxyState.profiles.find(p=>p.id===a.routeId);if(!route)throw Error('Unknown connection route');const id='proxy-test-'+randomBytes(8).toString('hex'),started=Date.now();
+  try{const c=await tg.connect({...account,id,apiHash:unlock(account.apiHash),proxy:normalizeProxy(route)},unlock(account.session));const authorized=await c.checkAuthorization();const result={ok:true,authorized,latency:Date.now()-started,routeId:route.id,routeName:routeName(route.id)};proxyHealth.set(account.id+':'+route.id,{...result,at:Date.now()});return result;}catch(error){proxyHealth.set(account.id+':'+route.id,{ok:false,at:Date.now(),error:error.message});throw error;}finally{const c=tg.clients.get(id);tg.clients.delete(id);tg.statuses.delete(id);await c?.disconnect().catch(()=>{});broadcast();}
+ }
+ case 'proxy-switch':{
+  const account=config.accounts.find(x=>x.id===a.account);if(!account?.session)throw Error('Choose a signed-in Telegram account');const routes=ProxyManager.candidates(proxyState,accountProxyPolicy(account.id)),current=proxyRoutes.get(account.id),index=Math.max(-1,routes.findIndex(r=>r.id===current));if(routes.length<2)throw Error('This account has only one available connection route.');const next=routes[(index+1)%routes.length];await disconnectAccount(account.id);preferredProxyRoutes.set(account.id,next.id);await client(account.id);broadcast();return {routeId:proxyRoutes.get(account.id),routeName:routeName(proxyRoutes.get(account.id))};
+ }
+ case 'reconnect':await disconnectAccount(a.account);await client(a.account);broadcast();return true;
+ case 'login':case 'login-answer':case 'login-resend':case 'login-cancel':{
+  if(event.sender!==win.webContents)throw Error('Sign in from the main window.');
+  if(cmd==='login')return login.start(a);
+  if(cmd==='login-answer')return login.answer(a.id,a.value);
+  if(cmd==='login-resend')return login.resend(a.id);
+  return login.cancel(a.id);
+ }
+ case 'remove':await disconnectAccount(a.account,true);config.accounts=config.accounts.filter(x=>x.id!==a.account);delete config.policies[a.account];save();broadcast();return true;
  case 'job-cancel':{const j=jobs.get(a.id);if(j.operation!=='search_all')throw Error('Only search jobs can be cancelled');jobs.cancel(a.id);for(const r of gate.list())if(r.payload.jobId===a.id)gate.cancel(r.id);broadcast();return true;}
  default:throw Error('Unknown command');
  }
 }
 async function boot(){
  file=path.join(app.getPath('userData'),'vault.json');config=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):{accounts:[],policies:{},audit:[],token:lock(randomBytes(32).toString('hex'))};config.notifications={corner:'bottom-right',width:460,privacy:false,dndUntil:0,...config.notifications};
+ loadProxyConfiguration();
  const migrate=!config.rulesState;gate.rules=new RuleBook(config.rulesState||{},state=>{config.rulesState=state;save();});
  if(migrate){for(const [account,p] of Object.entries(config.policies||{})){if(p.mode==='ask')continue;gate.rules.change({action:'create',rule:{name:'Imported read policy',account,effect:'allow',operations:['read_all'],selector:p.mode==='only'?{chats:p.chats}:{}}});if(p.mode==='only'||p.mode==='except'&&p.chats.length)gate.rules.change({action:'create',rule:{name:'Imported read exclusions',account,effect:'deny',operations:['read_all'],selector:p.mode==='only'?{excludeChats:p.chats}:{chats:p.chats}}});}config.policies={};}gate.policies=config.policies||{};
  gate.grants=new Map((config.grants||[]).map(g=>[g.key,g]));gate.persistGrants=list=>{config.grants=list;save();};
@@ -100,9 +153,9 @@ async function boot(){
  if(!approvalSmoke){syncTimer=setInterval(()=>void sync.run(),30000);syncTimer.unref();}
  jobs=new Jobs(config.jobsCipher?JSON.parse(unlock(config.jobsCipher)):[],items=>{config.jobsCipher=lock(JSON.stringify(items));save();});save();ipcMain.handle('command',command);
  win=window();win.on('close',e=>{if(!quitting){e.preventDefault();win.hide();}});tray=new Tray(nativeImage.createFromPath(path.join(assets,'icon.png')).resize({width:32,height:32}));tray.on('double-click',()=>navigate());tray.on('click',()=>navigate());rebuildTray();
- if(approvalSmoke)win.webContents.once('did-finish-load',()=>require('../test/approval-smoke.cjs')({app,gate,memories,win,getPopup:()=>popup,getTray:()=>tray,setAccounts:a=>{config.accounts=a;},finish:()=>{quitting=true;app.quit();}}));
+ if(approvalSmoke)win.webContents.once('did-finish-load',()=>require('../test/approval-smoke.cjs')({app,gate,memories,login,win,getPopup:()=>popup,getTray:()=>tray,setAccounts:a=>{config.accounts=a;},finish:()=>{quitting=true;app.quit();}}));
  else try{server=await serve({token:unlock(config.token),gate,accounts:()=>config.accounts,client,jobs,memories,onEvent:audit});}catch(e){audit({operation:'server_error',reason:e.message});}
  const timer=setInterval(()=>{if(config.notifications.dndUntil&&config.notifications.dndUntil<=Date.now()){config.notifications.dndUntil=0;save();showNotification();}},1000);timer.unref();
 }
 if(!app.requestSingleInstanceLock())app.quit();else app.whenReady().then(boot).catch(e=>{console.error(e);app.quit();});
-app.on('second-instance',()=>win?.show());app.on('before-quit',()=>{quitting=true;clearInterval(syncTimer);gate.close();server?.close();for(const c of tg.clients.values())c.disconnect();});
+app.on('second-instance',()=>win?.show());app.on('before-quit',()=>{quitting=true;void login.cancel();clearInterval(syncTimer);gate.close();server?.close();for(const c of tg.clients.values())c.disconnect();});

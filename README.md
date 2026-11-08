@@ -12,9 +12,9 @@ TeleGate is a Windows desktop application that connects MCP-compatible assistant
 - **Search and context:** search messages across permitted chats with date, sender, media, filename, and topic filters. Retrieve surrounding messages, replies, pinned messages, and discussion threads.
 - **Reviewed actions:** inspect the destination, formatted content, attachments, and schedule before approving a message or account change.
 - **Rich messaging:** compose formatted messages, send media and albums, reply in topics, create polls, and manage scheduled messages.
-- **Multiple accounts:** manage independent Telegram sessions with optional default or per-account proxy settings.
+- **Multiple accounts:** manage independent Telegram sessions with direct, fixed-proxy, or automatic failover routing per account.
 - **Desktop controls:** review requests in a notification card or approval center, inspect decision history, and pause AI access from the application or system tray.
-- **Device sync:** synchronize encrypted memory and read policies through a private Telegram channel, with conflict review and local approval for increased access.
+- **Device sync:** synchronize encrypted memory and read policies through a private Telegram channel, with automatic permission sync, conflict review, and an optional manual access review mode.
 - **Persistent context:** maintain global and per-chat notes that accompany authorized results and help assistants follow communication and workflow preferences.
 
 Read operations do not mark messages as read. Sending read receipts is a separate operation that requires approval.

@@ -5,9 +5,9 @@ TeleGate can synchronize memory, read rules, and saved read permissions through 
 ## First device
 
 1. Sign in to the Telegram account that will own the sync channel.
-2. Open **Device sync** and select **Create a private sync channel**.
+2. Open **Device sync** and choose **Create a new workspace**.
 3. Choose a strong shared passphrase of at least 16 characters and store it securely.
-4. Review the authorization for automatic sync uploads, reads, and cleanup, then enable sync.
+4. Keep **Automatically apply synced read permissions and rules** checked, or uncheck it to review incoming access changes manually on this device. Authorize automatic sync maintenance, then create the workspace.
 5. Copy the channel ID shown after setup.
 
 The application creates a private broadcast channel named **TeleGate Sync**. Keep it private with no other subscribers. Sync verifies those conditions and stops if they change. A workspace message identifies the channel and verifies the passphrase; do not delete or edit it.
@@ -15,8 +15,8 @@ The application creates a private broadcast channel named **TeleGate Sync**. Kee
 ## Additional devices
 
 1. Install TeleGate and sign in independently to the same Telegram account.
-2. Open **Device sync**, select **Connect to an existing workspace**, and enter the channel ID and shared passphrase.
-3. Review incoming access changes. New allow rules and saved permissions do not activate without review on this device.
+2. Open **Device sync** and choose **Connect to an existing workspace**. Select the same Telegram account. TeleGate searches for a private channel named **TeleGate Sync** with a valid workspace message and fills its ID when exactly one is found. Choose between multiple results, or enter the ID from your first device if the channel was renamed. Enter the existing shared passphrase; this path does not ask you to create or repeat a new passphrase.
+3. Leave automatic permission sync checked to apply incoming rules and saved read permissions automatically, or uncheck it to require manual review of access changes. This setting can also be changed later in **Device sync**.
 
 Other logged-in accounts are matched by their Telegram user IDs, not local aliases or installation IDs. Sign in to the corresponding account before applying its incoming changes. One local login per Telegram account is supported. Global notes and all-account rules retain their global scope. Folder selectors use Telegram folder IDs belonging to the same account.
 
@@ -34,9 +34,9 @@ The channel contains only a small workspace descriptor and encrypted sync attach
 
 ## Review and local controls
 
-Memory changes apply automatically unless they conflict. New deny/ask rules and clearly restrictive removals can apply automatically. Other rule changes are reviewed conservatively, including changes that might remove an existing restriction. Saved permission additions require review; revocations propagate automatically. Expiration is an absolute timestamp and is not extended by sync.
+Memory changes apply automatically unless they conflict. Read rules and saved read permissions also apply automatically by default, including new allow rules, modifications, and revocations. Uncheck **Automatically apply synced read permissions and rules** to require manual review on this device for changes that may increase access. In manual mode, new deny/ask rules, clearly restrictive removals, and saved-permission revocations can still apply automatically. Expiration is an absolute timestamp and is not extended by sync. Concurrent changes and records for accounts not yet signed in require attention in either mode.
 
-Incoming reviews appear in **Device sync**, with a desktop notification. Compare the current and incoming versions and acknowledge the effect before approving. **Keep local on this device** dismisses that incoming version locally; it does not revoke another device's policy. A new remote version is reviewed again. Resolving a concurrent conflict publishes the selected version to the other devices, where access review still applies.
+Incoming reviews appear in **Device sync**, with a desktop notification. Compare the current and incoming versions and acknowledge the effect before approving. **Keep local on this device** dismisses that incoming version locally; it does not revoke another device's policy. A new remote version is reviewed again. Resolving a concurrent conflict publishes the selected version to the other devices, where each device’s automatic or manual permission setting still applies.
 
 **Pause** stops automatic sync on this computer. **Disconnect this device** removes the local sync connection but keeps local rules, memory, and channel files. Neither action removes other devices' copies. AI access pause is separate and remains local.
 

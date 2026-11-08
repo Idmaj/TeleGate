@@ -1,5 +1,5 @@
 const fs=require('node:fs');const path=require('node:path');const assert=require('node:assert/strict');
-module.exports=async({app,gate,memories,win,getPopup,setAccounts,getTray,finish})=>{
+module.exports=async({app,gate,memories,login,win,getPopup,setAccounts,getTray,finish})=>{
  const out=path.join(process.cwd(),'artifacts','approvals');fs.mkdirSync(out,{recursive:true});const errors=[];const tg=require('../src/telegram.cjs'),originalConnect=tg.connect;
  const wait=ms=>new Promise(r=>setTimeout(r,ms));
  async function until(fn){for(let i=0;i<120;i++){if(await fn())return;await wait(50);}throw Error('UI wait timed out');}
@@ -31,8 +31,15 @@ module.exports=async({app,gate,memories,win,getPopup,setAccounts,getTray,finish}
   fs.writeFileSync(path.join(out,'directory-permission.png'),(await win.webContents.capturePage()).toPNG());
   await evaluate(win,"document.querySelector('.saved-permission').open=true;document.querySelector('[data-choice=day]').click()");await second;await wait(150);
   assert.equal(gate.listGrants().length,2);assert.equal(toast.isVisible(),false);
+  assert.equal(await evaluate(win,"document.body.textContent.includes('Saved permissions 2')"),false);
   await gate.check('demo','*','dialogs',{query:'another query'});
-  await evaluate(win,"document.querySelector('[data-revoke]').click()");await wait(100);assert.equal(gate.listGrants().length,1);
+  await evaluate(win,"document.querySelector('[data-page=permissions]').click()");
+  await until(()=>evaluate(win,"document.querySelectorAll('#savedPermissions [data-revoke]').length===2"));
+  await until(()=>evaluate(win,"document.querySelector('#savedPermissions .chat-avatar img')!==null"));
+  assert.equal(await evaluate(win,"document.querySelector('#savedPermissions .chat-title strong')?.textContent"),'Design Team');
+  assert.equal(await evaluate(win,"document.getElementById('savedPermissions').textContent.includes('Chat directory')"),true);
+  fs.writeFileSync(path.join(out,'saved-permissions.png'),(await win.webContents.capturePage()).toPNG());
+  await evaluate(win,"document.querySelector('#savedPermissions [data-revoke]').click()");await until(()=>gate.listGrants().length===1);
   pending=gate.check('demo','404','send',{text:'<script>alert(1)</script> Draft',schedule:2000000000},true).catch(e=>e.message);
   await until(()=>toast.isVisible());await until(()=>evaluate(toast,"document.querySelector('.warning')?.textContent.includes('Identity could not')"));
   assert.equal(await evaluate(toast,"document.querySelector('[data-choice=day]')===null"),true);
@@ -110,8 +117,10 @@ module.exports=async({app,gate,memories,win,getPopup,setAccounts,getTray,finish}
   const {safeStorage}=require('electron'),{mockTelegram}=require('./helpers/sync-telegram.cjs'),syncMock=mockTelegram(),SyncCore=require('../src/sync-core.cjs');
   const encrypted=v=>safeStorage.encryptString(v).toString('base64');
   setAccounts([{id:'sync-demo',label:'Sync demo',session:encrypted('synthetic-session'),apiHash:encrypted('synthetic-hash'),apiId:1}]);tg.connect=async()=>syncMock;
-  await evaluate(win,"document.querySelector('[data-page=sync]').click()");await until(()=>evaluate(win,"!!document.getElementById('syncSetup')"));
-  await evaluate(win,"document.querySelector('[name=password]').value='synthetic shared passphrase';document.querySelector('[name=repeat]').value='synthetic shared passphrase';document.querySelector('[name=confirm]').checked=true;document.getElementById('syncSetup').requestSubmit()");
+  await evaluate(win,"document.querySelector('[data-page=sync]').click()");await until(()=>evaluate(win,"!!document.getElementById('syncChooseCreate')"));
+  await evaluate(win,"document.getElementById('syncChooseCreate').click()");await until(()=>evaluate(win,"!!document.getElementById('syncSetup')"));
+  assert.equal(await evaluate(win,"!!document.querySelector('[name=channel]')"),false);assert.equal(await evaluate(win,"document.querySelector('[name=autoPermissions]').checked"),true);
+  await evaluate(win,"document.querySelector('[name=password]').value='synthetic shared passphrase';document.querySelector('[name=repeat]').value='synthetic shared passphrase';document.querySelector('[name=autoPermissions]').checked=false;document.querySelector('[name=confirm]').checked=true;document.getElementById('syncSetup').requestSubmit()");
   await until(()=>evaluate(win,"!!document.getElementById('syncNow') && !document.getElementById('syncNow').disabled"));
   const syncVault=JSON.parse(fs.readFileSync(path.join(app.getPath('userData'),'vault.json'),'utf8'));assert.ok(syncVault.syncCipher);assert.ok(!JSON.stringify(syncVault).includes('synthetic shared passphrase'));
   const syncSettings=JSON.parse(safeStorage.decryptString(Buffer.from(syncVault.syncCipher,'base64')));assert.ok(syncSettings.state.lastSync);assert.equal(await evaluate(win,"JSON.stringify(state.sync).includes('key')"),false);
@@ -123,8 +132,80 @@ module.exports=async({app,gate,memories,win,getPopup,setAccounts,getTray,finish}
   await evaluate(win,"document.querySelector('[data-sync-fingerprint]').checked=true;document.querySelector('[data-sync-accept]').click()");await until(()=>gate.rules.rules.some(r=>r.id==='remote-test'));
   await evaluate(win,"document.getElementById('syncToggle').click()");await until(()=>evaluate(win,"document.getElementById('syncToggle')?.textContent==='Resume'"));
   fs.writeFileSync(path.join(out,'sync-settings.png'),(await win.webContents.capturePage()).toPNG());
+  await evaluate(win,"tele.call('sync-disconnect')");await until(()=>evaluate(win,"!!document.getElementById('syncChooseJoin')"));
+  fs.writeFileSync(path.join(out,'sync-routes.png'),(await win.webContents.capturePage()).toPNG());
+  await evaluate(win,"document.getElementById('syncChooseJoin').click()");
+  await until(()=>evaluate(win,"document.querySelector('[name=channel]')?.value==='-10012345'"));
+  assert.equal(await evaluate(win,"!!document.querySelector('[name=repeat]')"),false);assert.equal(await evaluate(win,"document.querySelector('[name=autoPermissions]').checked"),true);
+  await evaluate(win,"document.querySelector('[name=password]').value='synthetic shared passphrase'");gate.notify();await wait(150);
+  assert.equal(await evaluate(win,"document.querySelector('[name=password]').value"),'synthetic shared passphrase');
+  fs.writeFileSync(path.join(out,'sync-join.png'),(await win.webContents.capturePage()).toPNG());
+  await evaluate(win,"document.querySelector('[name=confirm]').checked=true;document.getElementById('syncSetup').requestSubmit()");
+  await until(()=>evaluate(win,"!!document.getElementById('syncNow') && !document.getElementById('syncNow').disabled"));
+  assert.equal(await evaluate(win,"document.getElementById('syncAutoPermissions').checked"),true);
+  SyncCore.write(incoming,'grant:auto-test',{account:'tg:12345',kind:'chat',chat:'-10045454',expires:null},remoteDevice);
+  await new (require('../src/sync-telegram.cjs').TelegramSyncTransport)(syncMock,syncSettings.channel).send(SyncCore.seal({v:1,records:incoming},syncSettings.key,syncSettings.workspace),remoteDevice);
+  await evaluate(win,"document.getElementById('syncNow').click()");await until(()=>[...gate.grants.values()].some(g=>g.chat==='-10045454'));
+  await until(()=>evaluate(win,"!document.getElementById('syncAutoPermissions').disabled"));
+  await evaluate(win,"document.getElementById('syncAutoPermissions').click()");await until(()=>evaluate(win,"state.sync.autoPermissions===false && !state.sync.busy"));
+  // Exercise the staged account login through the real renderer and IPC.
+  const {Api}=require('telegram');let resent=0,passwordAttempts=0;
+  tg.connect=async account=>{const c={session:{save:()=> 'synthetic-new-login'},disconnect:async()=>{},invoke:async request=>{
+   if(request instanceof Api.auth.SendCode||request instanceof Api.auth.ResendCode){if(request instanceof Api.auth.ResendCode)resent++;return {phoneCodeHash:'synthetic-code-hash',type:new Api.auth.SentCodeTypeApp({length:5}),timeout:0,nextType:new Api.auth.CodeTypeSms()};}
+   if(request instanceof Api.auth.SignIn)throw Object.assign(Error('SESSION_PASSWORD_NEEDED'),{errorMessage:'SESSION_PASSWORD_NEEDED'});
+   if(request instanceof Api.account.GetPassword)return {hint:'A <script>private</script> reminder'};
+   if(request instanceof Api.auth.CheckPassword){if(++passwordAttempts===1)throw Object.assign(Error('PASSWORD_HASH_INVALID'),{errorMessage:'PASSWORD_HASH_INVALID'});return {user:{id:998877}};}
+   throw Error('Unexpected login request');
+  }};tg.clients.set(account.id,c);return c;};
+  const originalCheckPassword=login.checkPassword;login.checkPassword=async()=>new Api.InputCheckPasswordEmpty();
+  try{
+   await evaluate(win,"document.querySelector('[data-page=accounts]').click()");await until(()=>evaluate(win,"!!document.getElementById('loginCredentials')"));
+   assert.equal(await evaluate(win,"!!document.querySelector('[name=phone]')"),false);
+   fs.writeFileSync(path.join(out,'login-credentials.png'),(await win.webContents.capturePage()).toPNG());
+   await evaluate(win,"document.querySelector('[name=label]').value='Login demo';document.querySelector('[name=apiId]').value='123';document.querySelector('[name=apiHash]').value='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';document.getElementById('loginCredentials').requestSubmit()");
+   await until(()=>evaluate(win,"!!document.getElementById('loginPhone')"));assert.equal(await evaluate(win,"!!document.querySelector('[name=apiHash]')"),false);
+   fs.writeFileSync(path.join(out,'login-phone.png'),(await win.webContents.capturePage()).toPNG());
+   await evaluate(win,"document.querySelector('[name=phone]').value='+15551234567';document.getElementById('loginPhone').requestSubmit()");
+   await until(()=>evaluate(win,"!!document.getElementById('loginCode') && !document.getElementById('loginResend').disabled"));
+   assert.equal(await evaluate(win,"!!document.querySelector('[name=password]')"),false);
+   await evaluate(win,"document.querySelector('[name=code]').value='12345'");gate.notify();await wait(200);
+   assert.equal(await evaluate(win,"document.querySelector('[name=code]').value"),'12345');
+   await evaluate(win,"document.getElementById('loginResend').click()");await until(()=>resent===1);await until(()=>evaluate(win,"!document.getElementById('loginResend').disabled"));
+   fs.writeFileSync(path.join(out,'login-code.png'),(await win.webContents.capturePage()).toPNG());
+   await evaluate(win,"document.querySelector('[name=code]').value='12345';document.getElementById('loginCode').requestSubmit()");
+   await until(()=>evaluate(win,"!!document.getElementById('loginPassword')"));
+   assert.equal(await evaluate(win,"document.querySelector('.login-hint p').textContent"),'A <script>private</script> reminder');assert.equal(await evaluate(win,"!!document.querySelector('.login-hint script')"),false);assert.equal(await evaluate(win,"!!document.querySelector('[name=code]')"),false);
+   fs.writeFileSync(path.join(out,'login-password.png'),(await win.webContents.capturePage()).toPNG());
+   await evaluate(win,"document.querySelector('[name=password]').value='incorrect';document.getElementById('loginPassword').requestSubmit()");
+   await until(()=>evaluate(win,"document.getElementById('loginError').textContent.includes('incorrect')"));assert.equal(await evaluate(win,"document.querySelector('[name=password]').value"),'');
+   await evaluate(win,"document.querySelector('[name=password]').value='synthetic password';document.getElementById('loginPassword').requestSubmit()");
+   await until(()=>evaluate(win,"!!document.getElementById('loginAnother')"));assert.equal(await evaluate(win,"document.getElementById('accountList').textContent.includes('Login demo')"),true);
+   fs.writeFileSync(path.join(out,'login-success.png'),(await win.webContents.capturePage()).toPNG());
+   await evaluate(win,"document.getElementById('loginAnother').click()");await until(()=>evaluate(win,"!!document.getElementById('loginCredentials')"));
+  }finally{login.checkPassword=originalCheckPassword;}
+  // Exercise proxy profiles, conditional fields, tests and automatic failover through the real UI and IPC.
+  await evaluate(win,"document.querySelector('[data-page=proxy]').click()");await until(()=>evaluate(win,"!!document.getElementById('newProxy')"));
+  assert.equal(await evaluate(win,"document.querySelectorAll('.proxy-card').length"),1);
+  await evaluate(win,"document.getElementById('newProxy').click()");await until(()=>evaluate(win,"!!document.getElementById('proxyProfile')"));
+  assert.equal(await evaluate(win,"!!document.querySelector('[name=username]') && !document.querySelector('[name=secret]')"),true);
+  await evaluate(win,"document.querySelector('[name=name]').value='Office SOCKS';document.querySelector('[name=host]').value='127.0.0.1';document.querySelector('[name=port]').value='1080';document.querySelector('[name=username]').value='demo';document.querySelector('[name=password]').value='secret';document.getElementById('proxyProfile').requestSubmit()");
+  await until(()=>evaluate(win,"document.getElementById('proxyList').textContent.includes('Office SOCKS')"));
+  await evaluate(win,"document.getElementById('newProxy').click();document.getElementById('proxyProfileType').value='mtproto';document.getElementById('proxyProfileType').dispatchEvent(new Event('change'))");
+  assert.equal(await evaluate(win,"!!document.querySelector('[name=secret]') && !document.querySelector('[name=username]')"),true);
+  await evaluate(win,"document.querySelector('[name=name]').value='Telegram MTProxy';document.querySelector('[name=host]').value='proxy.example';document.querySelector('[name=port]').value='443';document.querySelector('[name=secret]').value='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';document.getElementById('proxyProfile').requestSubmit()");
+  await until(()=>evaluate(win,"document.querySelectorAll('.proxy-card').length===3"));
+  await evaluate(win,"document.getElementById('proxyTarget').value='sync-demo';document.getElementById('proxyTarget').dispatchEvent(new Event('change'));document.getElementById('proxyMode').value='auto';document.getElementById('proxyMode').dispatchEvent(new Event('change'))");
+  assert.equal(await evaluate(win,"document.querySelectorAll('[name=profileIds]:checked').length"),2);assert.equal(await evaluate(win,"document.querySelector('[name=includeDirect]').checked"),true);
+  await evaluate(win,"document.getElementById('proxyPolicy').requestSubmit()");await until(()=>evaluate(win,"state.proxy.accounts.find(a=>a.id==='sync-demo')?.policy.mode==='auto'"));
+  const routeAttempts=[];tg.connect=async account=>{routeAttempts.push(account.proxy?.MTProxy?'mtproto':account.proxy?.socksType?'socks':'direct');if(!account.proxy)throw Error('Synthetic direct connection failure');const c={connected:true,checkAuthorization:async()=>true,disconnect:async()=>{c.connected=false;}};tg.clients.set(account.id,c);return c;};
+  await evaluate(win,"tele.call('reconnect',{account:'sync-demo'})");assert.deepEqual(routeAttempts.slice(-2),['direct','socks']);
+  await evaluate(win,"render()");await until(()=>evaluate(win,"document.querySelector('.proxy-active')?.textContent.includes('Office SOCKS')"));
+  const profileId=await evaluate(win,"document.querySelector('[data-test-route]:not([data-test-route=direct])').dataset.testRoute");
+  await evaluate(win,`document.querySelector('[data-test-route="${profileId}"]').click()`);await until(()=>evaluate(win,"document.querySelector('.proxy-status.ok')?.textContent.includes('Working')"));
+  await evaluate(win,"document.getElementById('proxySwitch').click()");await until(()=>evaluate(win,"document.querySelector('.proxy-active')?.textContent.includes('Telegram MTProxy')"));
+  fs.writeFileSync(path.join(out,'proxy-list.png'),(await win.webContents.capturePage()).toPNG());
   assert.deepEqual(errors,[]);
-  fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,checks:['first notification renders','chat avatar and identity','raw JSON opt-in','draft preserved on new request','open approval center','chat-scoped grant','operation-scoped grant','revoke','write approval only once','escaped content','rejection reason','dismiss does not approve','empty queue hides toast','tray exists','rule editor and review','AI rule proposal requires explicit acknowledgement','permanent rule application','notification privacy','global pause','album raw payload redaction','AI-visible chat preview through real IPC','permitted preview filtering','folder membership explanation','global and chat memory editor','chat identity on memory review','memory notification before/after','memory approval acknowledgement','memory has no reusable approval','memory delete review','encrypted memory round trip','sync setup through IPC','encrypted sync persistence','sync access review requires acknowledgement','sync pause'],errors},null,2));
- }catch(e){fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:false,error:e.stack,errors},null,2));process.exitCode=1;}
+  fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,checks:['first notification renders','chat avatar and identity','raw JSON opt-in','draft preserved on new request','open approval center','chat-scoped grant','operation-scoped grant','saved permissions excluded from request queue','saved permissions shown with Telegram identity','revoke','write approval only once','escaped content','rejection reason','dismiss does not approve','empty queue hides toast','tray exists','rule editor and review','AI rule proposal requires explicit acknowledgement','permanent rule application','notification privacy','global pause','album raw payload redaction','AI-visible chat preview through real IPC','permitted preview filtering','folder membership explanation','global and chat memory editor','chat identity on memory review','memory notification before/after','memory approval acknowledgement','memory has no reusable approval','memory delete review','encrypted memory round trip','sync setup through IPC','encrypted sync persistence','sync access review requires acknowledgement','sync pause','separate sync setup paths','automatic sync channel discovery','sync setup draft survives updates','automatic permission application','manual sync permission toggle','staged login fields','login draft survives updates','resend login code','escaped Telegram password hint','retry invalid password','account login completion','proxy profile list','proxy type-specific fields','automatic direct-to-proxy failover','proxy connection test','manual proxy rotation'],errors},null,2));
+ }catch(e){if(!win.isDestroyed()){fs.writeFileSync(path.join(out,'failure.png'),(await win.webContents.capturePage()).toPNG());fs.writeFileSync(path.join(out,'failure.html'),await evaluate(win,'document.getElementById("content").innerHTML'));}fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:false,error:e.stack,errors},null,2));process.exitCode=1;}
  finally{tg.connect=originalConnect;finish();}
 };

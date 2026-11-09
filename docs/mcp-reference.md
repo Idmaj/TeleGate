@@ -78,3 +78,5 @@ Authorized results can include a second MCP text content block named `ownerMemor
 `memory_propose` accepts related create, update, and delete changes within one scope. A proposal must use the revision that was just read and explain the requested change. Its tool instructions favor concise, durable notes, updates instead of duplication, and removal of obsolete information. Changes apply together after a dedicated owner review. The application stores text; it does not enforce the meaning of a note as a policy.
 
 For example, a project note could identify the topic used for release planning or the convention for issue references. Such context does not grant permission to read, send, change rules, or maintain memory without the appropriate authorization.
+
+Attachment writes require owner inspection of bounded text/image previews or exported files. Text forwards include source content in the desktop approval and are checked for edits before sending. Media forwarding is disabled; use download and send_media with attachment review.

@@ -1,7 +1,7 @@
 const C=require('./sync-core.cjs');
 class SyncService{
  constructor({load,commit,current,mapping,transport,notify=()=>{}}){Object.assign(this,{load,commit,current,mapping,transport,notify});this.busy=false;this.error=null;this.retryAt=0;}
- status(){const x=this.load();return x?{enabled:x.enabled,autoPermissions:x.autoPermissions!==false,channel:x.channel,account:x.account,workspace:x.workspace,device:x.state.device,lastSync:x.state.lastSync,pending:x.state.pending,error:this.error,retryAt:this.retryAt,busy:this.busy}:null;}
+ status(){const x=this.load();return x?{enabled:x.enabled,autoPermissions:x.autoPermissions===true,channel:x.channel,account:x.account,workspace:x.workspace,device:x.state.device,lastSync:x.state.lastSync,pending:x.state.pending,error:this.error,retryAt:this.retryAt,busy:this.busy}:null;}
  async run(){
   if(this.busy||Date.now()<this.retryAt)return;const original=this.load();if(!original?.enabled)return;this.busy=true;this.notify();
   try{
@@ -10,7 +10,7 @@ class SyncService{
    for(const file of incoming.files){const payload=C.open(file.buffer,x.key,x.workspace);if(payload.v!==1)throw Error('Unsupported sync format');records=C.merge(records,C.validateRecords(payload.records));}
    // Capture after network I/O so edits made while downloading are not overwritten.
    const map=await this.mapping(),current=this.current(map);C.capture(x.state,current);x.state.records=C.merge(x.state.records,records);x.state.cursor=incoming.cursor;
-   const projected=C.project(x.state,current,v=>map.canMap(v),x.autoPermissions!==false);x.state.lastSync=Date.now();this.commit(x,projected,map);this.error=null;
+   const projected=C.project(x.state,current,v=>map.canMap(v),x.autoPermissions===true);x.state.lastSync=Date.now();this.commit(x,projected,map);this.error=null;
    // Read all available pages before publishing, to avoid unnecessary conflicts.
    if(!incoming.hasMore){const digest=C.hash(x.state.records);if(digest!==x.state.sentHash){
     const buffer=C.seal({v:1,records:x.state.records},x.key,x.workspace),id=await t.send(buffer,x.state.device);

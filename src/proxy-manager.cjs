@@ -20,9 +20,9 @@ function policy(input,profiles,{account=false}={}){
  }
  if(input?.mode==='auto'){
   const profileIds=[...new Set(Array.isArray(input.profileIds)?input.profileIds:profiles.filter(p=>p.enabled).map(p=>p.id))].filter(id=>ids.has(id));
-  const includeDirect=input.includeDirect!==false;
+  const includeDirect=input.includeDirect===true;
   if(!profileIds.length&&!includeDirect)throw Error('Automatic mode needs at least one route');
-  return {mode:'auto',profileIds,includeDirect,directFirst:input.directFirst!==false};
+  return {mode:'auto',profileIds,includeDirect,directFirst:input.directFirst===true};
  }
  throw Error('Choose a connection mode');
 }
@@ -32,7 +32,7 @@ function candidates(state,accountPolicy,preferred){
  if(chosen.mode==='direct')result=[direct];
  if(chosen.mode==='profile'){const p=byId.get(chosen.profileId);if(p)result=[p];}
  if(chosen.mode==='auto'){
-  const profiles=(chosen.profileIds||[]).map(id=>byId.get(id)).filter(Boolean),plain=chosen.includeDirect===false?[]:[direct];result=chosen.directFirst===false?[...profiles,...plain]:[...plain,...profiles];
+  const profiles=(chosen.profileIds||[]).map(id=>byId.get(id)).filter(Boolean),plain=chosen.includeDirect===true?[direct]:[];result=chosen.directFirst===true?[...plain,...profiles]:[...profiles,...plain];
  }
  if(preferred){const index=result.findIndex(x=>x.id===preferred);if(index>0)result=[result[index],...result.slice(0,index),...result.slice(index+1)];}
  if(!result.length)throw Error('No connection route is available');return result;

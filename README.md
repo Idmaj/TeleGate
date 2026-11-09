@@ -16,8 +16,10 @@ TeleGate is a Windows desktop application that connects MCP-compatible assistant
 - **Rich messaging:** compose formatted messages, send media and albums, reply in topics, create polls, and manage scheduled messages.
 - **Multiple accounts:** manage independent Telegram sessions with direct, fixed-proxy, or automatic failover routing per account.
 - **Desktop controls:** review requests in a notification card or approval center, inspect decision history, and pause AI access from the application or system tray.
-- **Device sync:** synchronize encrypted memory and read policies through a private Telegram channel, with automatic permission sync, conflict review, and an optional manual access review mode.
+- **Device sync:** synchronize encrypted memory and read policies through a private Telegram channel, with manual review of access increases by default, conflict review, and optional automatic permission sync.
 - **Persistent context:** maintain global and per-chat notes that accompany authorized results and help assistants follow communication and workflow preferences.
+
+Attachment approvals include bounded image/text previews and SHA-256 hashes. Files without a preview must be exported for inspection before approval. Media forwarding is disabled; text forwards show source content and reject edits detected before sending.
 
 Read operations do not mark messages as read. Sending read receipts is a separate operation that requires approval.
 
@@ -78,4 +80,4 @@ The build produces a Windows installer and a portable executable in `dist/`. Aut
 
 ## Scope
 
-TeleGate supports personal Telegram accounts through GramJS. Telegram permissions, rate limits, and content restrictions continue to apply. Calls, Secret Chats, Stories, and bot-only inline keyboards are outside the current feature set. Windows packages are unsigned unless signing is configured by the distributor.
+TeleGate supports personal Telegram accounts through the maintained Teleproto client (using the telegram package alias). Telegram permissions, rate limits, and content restrictions continue to apply. Calls, Secret Chats, Stories, and bot-only inline keyboards are outside the current feature set. Windows packages are unsigned unless signing is configured by the distributor.

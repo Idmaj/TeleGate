@@ -94,3 +94,5 @@ The existing application profile retains accounts, rules, memory, and the MCP to
 | Connection fails behind a proxy | Test the route in **Telegram proxy**, verify its type, address, port, and credentials, or enable automatic failover with another route. |
 
 When reporting a problem, share a minimal reproduction with synthetic data. Do not attach application vaults, session strings, tokens, or unredacted Telegram content.
+
+The 0.6.1 security update turns off automatic permission sync and direct routes in automatic proxy policies once on upgrade. Re-enable them only after reviewing their scope. Sign out and remove revokes the current Telegram session before deleting local credentials; Remove locally only leaves it active. Release signing requires the distributor's own certificate.

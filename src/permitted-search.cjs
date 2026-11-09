@@ -2,9 +2,9 @@ const access=require('./access.cjs');
 const {searchPage}=require('./advanced.cjs');
 
 async function filterResults(gate,account,state,rows){
- const current=new Map(state.rows.map(m=>[m.id,m])),results=[];
+ const authority=gate.readAuthority(),current=new Map(state.rows.map(m=>[m.id,m])),results=[];
  for(const row of rows){const m=current.get(row.chatId);if(m&&await access.allowed(gate,account,m,'search'))results.push(row);}
- gate.assertActive(account);return results;
+ gate.assertActive(account);gate.assertReadAuthority(authority);return results;
 }
 
 async function currentCursor(gate,account,state,args,cursor){

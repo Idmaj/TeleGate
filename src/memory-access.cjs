@@ -9,7 +9,7 @@ async function mayRead(gate,account,chat){
 }
 async function authorize(gate,scope){
  if(scope.kind==='global'){gate.assertActive('*');return;}
- if(!await mayRead(gate,scope.account,scope.chat))await gate.check(scope.account,scope.chat,'chat',{purpose:'Read saved owner memory for this chat; no message history is fetched'});
- gate.assertActive(scope.account);
+ for(const operation of CHAT_READS)if((await gate.explain(scope.account,scope.chat,operation)).effect==='allow')return gate.authorize(scope.account,scope.chat,operation,{purpose:'Read saved owner memory for this chat'});
+ return gate.authorize(scope.account,scope.chat,'chat',{purpose:'Read saved owner memory for this chat; no message history is fetched'});
 }
 module.exports={mayRead,authorize};

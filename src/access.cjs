@@ -34,25 +34,26 @@ async function snapshot(c,gate,account){
 async function allowed(gate,account,m,operation){return (await gate.explain(account,m.id,operation,m)).effect==='allow';}
 async function select(gate,account,state,options={}){
  gate.assertActive(account);
- const requested=options.operation||'messages',query=(options.query||'').toLowerCase(),rows=[];
+ const authority=gate.readAuthority(),requested=options.operation||'messages',query=(options.query||'').toLowerCase(),rows=[];
  for(const m of state.rows){
   if(options.chats&&!options.chats.includes(m.id)||options.folderId!==undefined&&!m.folderIds?.includes(options.folderId))continue;
   if(options.type&&options.type!==m.type.toLowerCase()&&!(options.type==='person'&&m.type==='Bot'))continue;
   if(![m.title,m.username||'',m.id].join(' ').toLowerCase().includes(query))continue;
   if(await allowed(gate,account,m,requested))rows.push(m);
  }
- gate.assertActive(account);return rows;
+ gate.assertActive(account);gate.assertReadAuthority(authority);return rows;
 }
 
 async function list(c,gate,account,options={}){
  const state=await snapshot(c,gate,account),selected=await select(gate,account,state,options);
- const offset=options.offset||0,limit=options.limit||50,items=[];
+ const authority=gate.readAuthority(),offset=options.offset||0,limit=options.limit||50,items=[];
  for(const m of selected.slice(offset,offset+limit)){
   const allowedOperations=[];for(const op of CHAT_READS)if(await allowed(gate,account,m,op))allowedOperations.push(op);
   if(!allowedOperations.includes(options.operation||'messages'))continue;
   items.push({id:m.id,title:m.title,username:m.username,type:m.type.toLowerCase(),public:m.public,folders:state.folders.filter(f=>m.folderIds?.includes(f.id)),allowedOperations});
  }
  gate.assertActive(account);
+ gate.assertReadAuthority(authority);
  gate.audit({account,operation:'accessible_chats',automatic:true,allow:true,scope:'permitted',count:items.length});
  return {scope:'permitted',operation:options.operation||'messages',items,nextOffset:selected.length>offset+limit?offset+limit:null,coverage:'Only chats currently allowed for this operation. Other Telegram chats were not exposed. Folder membership is refreshed on each request.',...(state.folderError?{notice:'Folder information is unavailable. Chats requiring unverified folder permissions are omitted.'}:{})};
 }

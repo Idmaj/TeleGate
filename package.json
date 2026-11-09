@@ -1,6 +1,6 @@
 {
   "name": "telegate",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Permission-controlled Telegram workspace for MCP-compatible AI assistants",
   "main": "src/main.cjs",
@@ -9,17 +9,18 @@
     "test": "node --test test/*.test.cjs",
     "dist": "electron-builder --win nsis portable",
     "dist:portable": "electron-builder --win portable",
-    "test:approvals": "electron . --approval-smoke"
+    "test:approvals": "electron . --approval-smoke",
+    "dist:signed": "electron-builder --win nsis portable --config.forceCodeSigning=true"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "express": "^5.1.0",
-    "telegram": "^2.26.22",
+    "telegram": "npm:teleproto@1.232.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "electron": "^40.0.0",
-    "electron-builder": "^26.0.12"
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
   },
   "build": {
     "appId": "ir.telegate.desktop",
@@ -33,7 +34,6 @@
         "nsis",
         "portable"
       ],
-      "signExecutable": false,
       "icon": "src/assets/icon.ico"
     },
     "nsis": {
@@ -55,5 +55,9 @@
     "electron",
     "desktop",
     "automation"
-  ]
+  ],
+  "overrides": {
+    "minimatch@^9.0.3": "11.0.5",
+    "minimatch@^10.2.5": "11.0.5"
+  }
 }

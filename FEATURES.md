@@ -35,7 +35,7 @@ Discovery and cross-chat search default to permitted chats. Expanded access is a
 | Media and albums | Send attachments, captions, albums, and supported voice or video variants. |
 | Replies and topics | Target a reply or forum topic when supported by the operation. |
 | Scheduling | Schedule messages and manage scheduled content, delivery time, cancellation, and immediate sending. |
-| Message actions | Edit, delete, forward, pin, unpin, react, and create polls. |
+| Message actions | Edit, delete, forward text with source review, pin, unpin, react, and create polls. Media forwarding is disabled; use reviewed uploads. |
 | Multiple recipients | Send the same content to selected chats with a separate approval for each destination. |
 | Chat organization | Archive, mute, pin, mark unread, and manage custom folders. |
 | Groups and channels | Create chats, update metadata and photos, manage invitations and join requests, and perform supported member-management actions. |
@@ -63,7 +63,7 @@ The desktop editor supports adding, editing, and deleting notes. Assistants can 
 
 ## Device synchronization
 
-Opt-in private-channel synchronization shares encrypted memory, read rules, and saved read permissions across independent installations. It supports account identity mapping, offline retries, deletion tracking, concurrent-edit review, and automatic access synchronization with an optional destination-device review mode. Setup separates creating a new workspace from joining an existing one and finds default-name sync channels automatically. Each device retains three confirmed snapshots of its own. See [Device sync](docs/device-sync.md) for setup and boundaries.
+Opt-in private-channel synchronization shares encrypted memory, read rules, and saved read permissions across independent installations. It supports account identity mapping, offline retries, deletion tracking, concurrent-edit review, and manual destination-device review of access increases by default, with optional automatic access synchronization. Setup separates creating a new workspace from joining an existing one and finds default-name sync channels automatically. Each device retains three confirmed snapshots of its own. See [Device sync](docs/device-sync.md) for setup and boundaries.
 
 ## Desktop experience
 

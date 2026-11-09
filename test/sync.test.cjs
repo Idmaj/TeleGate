@@ -64,10 +64,10 @@ test('restart preserves merge clocks and offline edits; persistence errors leave
 });
 
 
-test('permission sync is automatic by default, with a per-device manual override',async()=>{
+test('permission sync defaults to manual review and automatic access requires explicit opt-in',async()=>{
  const net=network(),a=device(net),b=device(net);delete b.saved.autoPermissions;
- assert.equal(b.svc.status().autoPermissions,true);
- a.current={'rule:rule':rule()};await a.svc.run();await b.svc.run();assert.equal(b.current['rule:rule'].effect,'allow');assert.equal(b.saved.state.pending.length,0);
+ assert.equal(b.svc.status().autoPermissions,false);
+ a.current={'rule:rule':rule()};await a.svc.run();await b.svc.run();assert.ok(!b.current['rule:rule']);assert.equal(b.saved.state.pending.length,1);b.saved.autoPermissions=true;await b.svc.run();assert.equal(b.current['rule:rule'].effect,'allow');assert.equal(b.saved.state.pending.length,0);
  b.saved.autoPermissions=false;const grant={kind:'chat',account:'tg:12345',chat:'-10012345',expires:null};a.current['grant:g']=grant;
  await a.svc.run();await b.svc.run();assert.ok(!b.current['grant:g']);assert.equal(b.saved.state.pending.length,1);assert.equal(b.svc.status().autoPermissions,false);
  b.saved.autoPermissions=true;await b.svc.run();assert.deepEqual(b.current['grant:g'],grant);assert.equal(b.saved.state.pending.length,0);

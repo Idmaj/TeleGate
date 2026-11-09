@@ -2,7 +2,7 @@
 
 ## Environment
 
-Use Windows with Node.js 22.12 or later and npm. The Electron version pinned by `package-lock.json` determines the desktop runtime. Keep the lockfile committed for reproducible dependency resolution.
+Use Windows with Node.js 22.12 or later and npm. The Electron version pinned by `package-lock.json` determines the desktop runtime. Keep the lockfile committed for reproducible dependency resolution. Electron and Teleproto are pinned. The minimatch overrides update the packaging dependencies from major versions 9/10 to 11 to address GHSA-g3hv-75wg-m249; validate packaging when changing these overrides.
 
 ```powershell
 npm ci
@@ -18,7 +18,7 @@ Dependencies and the Electron distribution are downloaded during installation. C
 | `src/main.cjs` | Electron lifecycle, encrypted persistence, trusted IPC, notifications, and tray controls |
 | `src/server.cjs` | Local authenticated MCP transport and tool registration |
 | `src/catalog.cjs` | Telegram operation schemas and input bounds |
-| `src/telegram.cjs`, `src/advanced.cjs` | GramJS connections, Telegram requests, search, and serialization |
+| `src/telegram.cjs`, `src/advanced.cjs` | Teleproto connections (telegram package alias), Telegram requests, search, and serialization |
 | `src/gate.cjs`, `src/rules.cjs` | Approval requests, grants, rule evaluation, and revision checks |
 | `src/access.cjs`, `src/permitted-search.cjs` | Permission-aware discovery and search |
 | `src/jobs.cjs` | Background search state and write deduplication |
@@ -50,7 +50,7 @@ Telegram API serialization tests do not establish live account privileges or net
 npm run dist -- --config.electronDist=node_modules/electron/dist
 ```
 
-This uses the installed Electron distribution and creates both NSIS installer and portable targets under `dist/`. `npm run dist:portable` builds only the portable target. Signing is disabled in the checked-in build configuration; distributors must configure their own signing process if required.
+This uses the installed Electron distribution and creates both NSIS installer and portable targets under `dist/`. `npm run dist:portable` builds only the portable target. Local unsigned packages are supported. Distributors should configure a Windows signing certificate and use npm run dist:signed, which enforces signing.
 
 The package includes application sources and required runtime dependencies. Tests, local reports, screenshots, and development documentation are not runtime assets. A version change should update both `package.json` and the root package entry in `package-lock.json`.
 

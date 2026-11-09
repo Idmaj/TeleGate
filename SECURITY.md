@@ -55,4 +55,18 @@ If private vulnerability reporting is available on the repository, use that chan
 
 ## Optional device sync
 
-Sync uploads only memory, read rules, and saved read permissions, encrypted before leaving the device. Account mapping uses Telegram IDs. Sync keys and local merge state are encrypted in the application vault. Tokens, sessions, audit logs, and pending approvals are excluded. Read rules and saved permissions from trusted devices apply automatically by default. Each device can disable automatic permission application to require local review of access-expanding changes. Concurrent record changes retain all versions and require a choice in either mode. See [Device sync](docs/device-sync.md) for passphrase handling, retention, trusted-device boundaries, and recovery limitations.
+Sync uploads only memory, read rules, and saved read permissions, encrypted before leaving the device. Account mapping uses Telegram IDs. Sync keys and local merge state are encrypted in the application vault. Tokens, sessions, audit logs, and pending approvals are excluded. Access-expanding read rules and saved permissions require local review by default. Each device can explicitly enable automatic permission application only when all participating devices are trusted to change its access. Concurrent record changes retain all versions and require a choice in either mode. See [Device sync](docs/device-sync.md) for passphrase handling, retention, trusted-device boundaries, and recovery limitations.
+
+## Security update 0.6.1
+
+Read authorization is checked again before MCP results are released. Revocation, expiry, new deny rules, and pause can withhold an in-flight result. One-time approval remains usable only while its authorization state is unchanged. Telegram may already have processed a network request; these checks cannot recall data previously delivered or undo a completed write.
+
+Image and UTF-8 text attachment previews are bounded. Every attachment shows a SHA-256 digest and requires an explicit review acknowledgement. Unsupported or oversized previews require saving a copy for inspection; exported files are not automatically opened and remain on disk until the owner deletes them. A preview does not certify that a file is harmless or remove image metadata. Never execute untrusted attachments. Media forwarding is disabled; use reviewed uploads instead. Text forward sources are read with permission, displayed, and compared again immediately before forwarding. Telegram does not offer a conditional forward tied to a content hash; a source can still change after the final comparison.
+
+On the first launch of this update, existing automatic permission sync and direct routes in automatic proxy policies are disabled. Explicit direct connection policies remain unchanged. The owner can opt back in from the corresponding settings. The migration runs once per profile.
+
+Sign out and remove requests Telegram authorization revocation before deleting local credentials. Network failure retains credentials with AI access paused so the owner can retry. Remove locally only is a separate confirmed option and does not revoke the Telegram session. Terminate the session in Telegram Settings > Devices when remote revocation cannot be confirmed. Existing audit, memory, and historical job records are not erased by account removal.
+
+All MCP clients still share one bearer token and the owner's read rules. Only connect trusted clients. Data provided to an external assistant can be processed by its provider. Windows secure storage cannot isolate credentials from malware running as the same user.
+
+Unsigned local builds remain possible. Release distributors should use npm run dist:signed with their own signing certificate; the command fails when signing cannot be completed. A successful dependency audit is not proof that the application or its dependencies contain no vulnerabilities.

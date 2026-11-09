@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,safeStorage,Notification,Tray,Menu,nativeImage,screen}=require('electron');
+const {app,BrowserWindow,ipcMain,safeStorage,dialog,Notification,Tray,Menu,nativeImage,screen}=require('electron');
 const fs=require('node:fs'),path=require('node:path');const {randomBytes}=require('node:crypto');
 const {Gate}=require('./gate.cjs'),{RuleBook}=require('./rules.cjs'),{Jobs}=require('./jobs.cjs');const {MemoryBook}=require('./memory.cjs');
 const {createIdentityResolver,identityFromEntity}=require('./identity.cjs');const tg=require('./telegram.cjs'),advanced=require('./advanced.cjs');const {serve}=require('./server.cjs'),{normalizeProxy}=require('./proxy.cjs'),ProxyManager=require('./proxy-manager.cjs');
@@ -9,6 +9,7 @@ const {SyncService}=require('./sync-service.cjs'),{TelegramSyncTransport}=requir
 let sync, syncData=null, syncTimer, syncSetupBusy=false;const syncNotified=new Set();
 const notified=new Set();
 const {LoginService}=require('./login.cjs');
+const removingAccounts=new Set();
 const proxyRoutes=new Map(),preferredProxyRoutes=new Map(),proxyHealth=new Map();
 const login=new LoginService({connect:account=>connectAccount(account,'',proxyState.defaultPolicy),release:async id=>disconnectAccount(id,true),complete:(account,c,user)=>{if(config.accounts.some(a=>a.telegramId===user.id.toString()))throw Error('This Telegram account is already added.');const added={...account,telegramId:user.id.toString(),apiHash:lock(account.apiHash),session:lock(c.session.save())};config.accounts.push(added);try{save();}catch(e){config.accounts.pop();throw e;}},notify:broadcast});const assets=path.join(__dirname,'assets');
 const lock=s=>{if(!safeStorage.isEncryptionAvailable())throw Error('Windows secure storage unavailable');return safeStorage.encryptString(s).toString('base64');};
@@ -27,7 +28,7 @@ async function connectAccount(account,session,overridePolicy){
  }
  throw Error('Unable to connect through the available routes. '+failures.join(' · '));
 }
-async function client(id){const a=config.accounts.find(a=>a.id===id);if(!a||!a.session)throw Error('Account is not logged in');return connectAccount({...a,apiHash:unlock(a.apiHash)},unlock(a.session));}
+async function client(id){if(removingAccounts.has(id))throw Error('Account removal is in progress');const a=config.accounts.find(a=>a.id===id);if(!a||!a.session)throw Error('Account is not logged in');return connectAccount({...a,apiHash:unlock(a.apiHash)},unlock(a.session));}
 function accountList(){return config.accounts.map(({id,label,telegramId,session,proxyPolicy})=>({id,label,telegramId,loggedIn:!!session,connected:!!tg.clients.get(id)?.connected,status:tg.statuses.get(id),hasOwnProxy:!!proxyPolicy,proxyRoute:proxyRoutes.get(id),proxyRouteName:proxyRoutes.has(id)?routeName(proxyRoutes.get(id)):null}));}
 function proxyView(){return {...ProxyManager.publicState(proxyState),accounts:config.accounts.map(a=>({id:a.id,label:a.label,policy:accountProxyPolicy(a.id),activeRoute:proxyRoutes.get(a.id)||null,activeRouteName:proxyRoutes.has(a.id)?routeName(proxyRoutes.get(a.id)):null})),health:Object.fromEntries(proxyHealth)};}
 function persistProxyState(){config.proxyStateCipher=lock(JSON.stringify(proxyState));save();}
@@ -60,7 +61,7 @@ async function command(event,cmd,a={}){
   if(typeof a.password!=='string'||a.password.length<16)throw Error('Use a passphrase of at least 16 characters.');
   syncSetupBusy=true;try{const c=await client(a.account);const settings=a.mode==='create'?await TelegramSyncTransport.create(c,a.password):await TelegramSyncTransport.join(c,a.channel,a.password);
   const account=config.accounts.find(x=>x.id===a.account);account.telegramId=settings.owner;
-  syncData={...settings,account:a.account,enabled:true,autoPermissions:a.autoPermissions!==false,state:SyncCore.newState()};config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();void sync.run();return true;}finally{syncSetupBusy=false;}
+  syncData={...settings,account:a.account,enabled:true,autoPermissions:a.autoPermissions===true,state:SyncCore.newState()};config.syncCipher=lock(JSON.stringify(syncData));save();broadcast();void sync.run();return true;}finally{syncSetupBusy=false;}
  }
  case 'sync-discover':if(event.sender!==win.webContents)throw Error('Find sync channels from the main window.');return TelegramSyncTransport.discover(await client(a.account));
  case 'sync-permissions':{
@@ -86,8 +87,17 @@ async function command(event,cmd,a={}){
  case 'rules-change':{if(a.expectedRevision!==undefined&&a.expectedRevision!==gate.rules.revision)throw Error('Rules changed; review again');const {expectedRevision,...change}=a;const result=gate.rules.change(change);audit({operation:'owner_rule_change',allow:true,reason:a.action});await gate.reconcile();broadcast();return result;}
  case 'rules-explain':return gate.explain(a.account,a.chat,a.operation);
  case 'revoke-grant':return gate.revoke(a.key);
- case 'decide':return gate.decide(a.id,a.allow,a.reason,a.duration||a.day);
- case 'decide-batch':{if(!Array.isArray(a.ids)||a.ids.length>100)throw Error('Invalid selection');if(a.ids.some(id=>['rule_change','memory_change'].includes(gate.pending.get(id)?.operation)))throw Error('Review memory and security changes individually');return a.ids.map(id=>({id,result:gate.decide(id,!!a.allow,a.reason||'Batch owner decision')}));}
+ case 'attachment-export':{
+  const request=gate.pending.get(a.id),review=request?.attachments.find(f=>f.index===a.index);
+  if(!request||!review||request.expires<=Date.now())throw Error('Attachment request expired');
+  const source=require('./attachment-review.cjs'),attachment=source.attachments(request.payload)[a.index];
+  const chosen=await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender),{title:'Save a copy for inspection; do not execute untrusted files',defaultPath:path.basename(review.filename).replace(/[<>:"/\\|?*\x00-\x1f]/g,'_'),buttonLabel:'Save for inspection'});
+  if(chosen.canceled)return false;
+  if(gate.pending.get(a.id)!==request||request.expires<=Date.now())throw Error('Attachment request expired');
+  fs.writeFileSync(chosen.filePath,source.decode(attachment));request.reviewExports.push(a.index);broadcast();return true;
+ }
+ case 'decide':return gate.decide(a.id,a.allow,a.reason,a.duration||a.day,a.reviewed===true);
+ case 'decide-batch':{if(!Array.isArray(a.ids)||a.ids.length>100)throw Error('Invalid selection');if(a.ids.some(id=>['rule_change','memory_change'].includes(gate.pending.get(id)?.operation)||gate.pending.get(id)?.attachments.length))throw Error('Review memory and security changes individually');return a.ids.map(id=>({id,result:gate.decide(id,!!a.allow,a.reason||'Batch owner decision')}));}
  case 'accessible-chats':return require('./access.cjs').list(await client(a.account),gate,a.account,a);
  case 'folders':return advanced.run(await client(a.account),'folders',{});
  case 'dialogs':return tg.dialogs(await client(a.account),a.query||'',a.offset||0,100);
@@ -118,7 +128,24 @@ async function command(event,cmd,a={}){
   if(cmd==='login-resend')return login.resend(a.id);
   return login.cancel(a.id);
  }
- case 'remove':await disconnectAccount(a.account,true);config.accounts=config.accounts.filter(x=>x.id!==a.account);delete config.policies[a.account];save();broadcast();return true;
+ case 'remove':{
+  if(event.sender!==win.webContents||a.confirm!==true)throw Error('Confirm account removal in the main window');
+  if(!config.accounts.some(x=>x.id===a.account))throw Error('Unknown account');
+  if(removingAccounts.has(a.account)||sync?.busy)throw Error('Account or sync is busy; try again shortly');
+  pause(a.account,true);
+  if(syncData?.account===a.account){syncData.enabled=false;config.syncCipher=lock(JSON.stringify(syncData));save();}
+  removingAccounts.add(a.account);
+  try{
+   const account=config.accounts.find(x=>x.id===a.account);
+   const c=a.revokeSession===false?null:await connectAccount({...account,apiHash:unlock(account.apiHash)},unlock(account.session));
+   if(c)await require('./account-removal.cjs').revokeSession(c);
+   await disconnectAccount(a.account,true);
+   config.accounts=config.accounts.filter(x=>x.id!==a.account);delete config.policies[a.account];
+   for(const [key,g]of gate.grants)if(g.account===a.account)gate.grants.delete(key);
+   config.grants=gate.listGrants();save();broadcast();return true;
+  }catch(error){throw Error('Account remains paused. Removal failed: '+error.message+'. Retry, or terminate the session in Telegram Settings > Devices.');}
+  finally{removingAccounts.delete(a.account);}
+ }
  case 'job-cancel':{const j=jobs.get(a.id);if(j.operation!=='search_all')throw Error('Only search jobs can be cancelled');jobs.cancel(a.id);for(const r of gate.list())if(r.payload.jobId===a.id)gate.cancel(r.id);broadcast();return true;}
  default:throw Error('Unknown command');
  }
@@ -132,6 +159,13 @@ async function boot(){
  gate.metadata=async(account,chat)=>{const c=await client(account),e=await c.getEntity(chat),m=identityFromEntity(e);if(gate.rules.rules.some(r=>r.selector.folderIds.length)){const ds=await c.getDialogs({limit:undefined}),d=ds.find(d=>require('telegram/Utils').getPeerId(d.entity).toString()===chat);m.folderIds=d?[d.archived?1:0,...(await advanced.folderData(c)).filter(f=>advanced.matchesFolder(f,d)).map(f=>f.id)]:[];}return m;};
  memories=new MemoryBook(config.memoriesCipher?JSON.parse(unlock(config.memoriesCipher)):{},state=>{const previous=config.memoriesCipher;try{config.memoriesCipher=lock(JSON.stringify(state));save();}catch(e){config.memoriesCipher=previous;throw e;}});
  syncData=config.syncCipher?JSON.parse(unlock(config.syncCipher)):null;
+ if(config.securityDefaultsVersion!==1){
+  if(syncData){syncData.autoPermissions=false;config.syncCipher=lock(JSON.stringify(syncData));}
+  const harden=policy=>policy.mode==='auto'?{...policy,includeDirect:false,directFirst:false}:policy;
+  proxyState.defaultPolicy=harden(proxyState.defaultPolicy);
+  for(const account of config.accounts)if(account.proxyPolicy)account.proxyPolicy=lock(JSON.stringify(harden(accountProxyPolicy(account.id))));
+  config.proxyStateCipher=lock(JSON.stringify(proxyState));config.securityDefaultsVersion=1;save();
+ }
  const local=()=>({rules:gate.rules.rules,memories:memories.entries,grants:[...gate.grants.values()]});
  sync=new SyncService({load:()=>syncData,notify:()=>{broadcast();if(quitting||approvalSmoke)return;const pending=syncData?.state.pending||[],fresh=pending.filter(p=>!syncNotified.has(p.fingerprint));for(const p of pending)syncNotified.add(p.fingerprint);if(fresh.length){const notification=new Notification({title:'TeleGate · Sync review',body:'Device sync has changes that need your review. Open Device sync to compare versions.'});notification.on('click',()=>navigate('sync'));notification.show();}},
   mapping:async()=>{for(const a of config.accounts)if(a.session&&!a.telegramId){try{a.telegramId=(await (await client(a.id)).getMe()).id.toString();}catch{}}return SyncLocal.accountMap(config.accounts);},
